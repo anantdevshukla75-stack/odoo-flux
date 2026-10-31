@@ -7,7 +7,8 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
-  History
+  History,
+  Download
 } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
@@ -36,6 +37,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
 
   // Modals
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -62,6 +64,18 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   // Print action
   const handlePrint = () => {
     navigate(`${backPath}/${invoice.id}/print`);
+  };
+
+  const handleDownloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      await apiService.downloadInvoicePdf(invoice.id);
+      setFeedback('Invoice PDF downloaded.');
+    } catch (err) {
+      setFeedback(err?.message || 'Could not download the invoice PDF.');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   // Scroll to payment history
@@ -120,6 +134,16 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
             onClick={handlePrint}
           >
             Print Layout
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
+            loading={isDownloadingPdf}
+            onClick={handleDownloadPdf}
+          >
+            Download PDF
           </Button>
 
           {/* Action: View Payment History */}

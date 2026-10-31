@@ -23,6 +23,36 @@ def get_user_by_email(session: Session, email: str) -> model.User | None:
     return session.exec(statement).first()
 
 
+def list_staff(
+    session: Session, *, offset: int = 0, limit: int = 100
+) -> list[model.User]:
+    statement = (
+        select(model.User)
+        .where(model.User.role == model.UserRole.STAFF)
+        .order_by(model.User.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(session.exec(statement).all())
+
+
+def get_staff_by_id(session: Session, staff_id: int) -> model.User | None:
+    db_user = get_user_by_id(session, staff_id)
+    if db_user is None or db_user.role != model.UserRole.STAFF:
+        return None
+    return db_user
+
+
+def update_staff(
+    session: Session, db_user: model.User, *, is_active: bool
+) -> model.User:
+    db_user.is_active = is_active
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user
+
+
 def create_user(
     session: Session,
     *,

@@ -5,6 +5,7 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
+import VariantEditor from '../../components/products/VariantEditor.jsx';
 import { apiService } from '../../services/apiService.js';
 
 export function ProductForm() {
@@ -23,6 +24,8 @@ export function ProductForm() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [variants, setVariants] = useState([]);
+  const [originalVariants, setOriginalVariants] = useState([]);
 
   useEffect(() => {
     async function loadProduct() {
@@ -37,6 +40,8 @@ export function ProductForm() {
             notes: prod.notes || '',
             isActive: prod.isActive
           });
+          setVariants(prod.variants || []);
+          setOriginalVariants(prod.variants || []);
         }
       }
     }
@@ -55,10 +60,28 @@ export function ProductForm() {
     };
 
     try {
+      let savedProduct;
       if (isEdit) {
-        await apiService.updateProduct(productId, payload);
+        savedProduct = await apiService.updateProduct(productId, payload);
       } else {
-        await apiService.createProduct(payload);
+        savedProduct = await apiService.createProduct(payload);
+      }
+      const savedProductId = savedProduct?.id || Number(productId);
+      const originalIds = new Set(originalVariants.map((variant) => variant.id));
+      const currentIds = new Set(
+        variants.filter((variant) => Number.isInteger(variant.id)).map((variant) => variant.id)
+      );
+      for (const original of originalVariants) {
+        if (!currentIds.has(original.id)) {
+          await apiService.deleteProductVariant(savedProductId, original.id);
+        }
+      }
+      for (const variant of variants) {
+        if (originalIds.has(variant.id)) {
+          await apiService.updateProductVariant(savedProductId, variant.id, variant);
+        } else {
+          await apiService.createProductVariant(savedProductId, variant);
+        }
       }
       navigate('/admin/products');
     } catch (err) {
@@ -159,6 +182,14 @@ export function ProductForm() {
               <span>Product is active and available for quotation sales</span>
             </label>
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
+          <VariantEditor
+            basePrice={Number(formData.salesPrice) || 0}
+            variants={variants}
+            onChange={setVariants}
+          />
         </div>
 
         {/* Form Actions */}

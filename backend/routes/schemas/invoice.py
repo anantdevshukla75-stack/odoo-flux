@@ -10,8 +10,14 @@ class InvoiceLineResponse(BaseModel):
     id: int
     product_id: int
     description: str
+    variant_id: int | None = None
+    variant_name: str | None = None
     quantity: int
     unit_price: Decimal
+    tax_rate: Decimal = Decimal("0.00")
+    tax_calculation_type: model.TaxCalculationType = (
+        model.TaxCalculationType.EXCLUSIVE
+    )
     discount_amount: Decimal
     tax_amount: Decimal
     line_total: Decimal

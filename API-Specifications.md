@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** Authentication, Products, Plans, Customers, Subscriptions, Invoices, Billing, Payments, and the Dashboard summary are implemented. Remaining modules will follow the same `/api/v1` prefix.
+> **Implementation status:** Authentication, staff directory, Products and Variants, Plans, Quotation Templates and Quotations, Customers, Subscriptions, Invoices, Billing, Payments, Taxes, Discounts, and the Dashboard summary are implemented. SMTP-dependent email delivery requires SMTP settings. Due billing is catch-up capable but must be invoked by an external scheduler or staff member.
 
 ## Conventions
 
@@ -26,7 +26,10 @@ All endpoints below are relative to this base path.
 | `POST` | `/auth/refresh` | — | `200` | Rotate access + refresh tokens |
 | `POST` | `/auth/logout` | Bearer | `204` | Logout (client discards tokens) |
 | `GET` | `/auth/me` | Bearer | `200` | Current authenticated user |
+| `GET` | `/auth/staff` | Admin | `200` | List staff accounts |
 | `POST` | `/auth/staff` | Admin | `201` | Admin creates a staff account |
+| `GET` | `/auth/staff/{id}` | Admin | `200` | Get a staff account |
+| `PATCH` | `/auth/staff/{id}` | Admin | `200` | Update staff activation |
 | `POST` | `/auth/forgot-password` | — | `202` | Request a password reset token |
 | `POST` | `/auth/reset-password` | — | `204` | Reset password with a token |
 
@@ -47,7 +50,7 @@ All endpoints below are relative to this base path.
 | Field | Type | Rules |
 | --- | --- | --- |
 | `email` | string | Valid email, unique |
-| `password` | string | 8–128 characters |
+| `password` | string | 9–128 characters; uppercase, lowercase, and special character required |
 | `full_name` | string | 1–255 characters |
 
 `UserCreateResponse`
@@ -144,7 +147,7 @@ Returns a **new token pair** (refresh rotation). The previous refresh token is n
 
 `POST /auth/logout` · Bearer · `204`
 
-Returns an empty body. Tokens are stateless JWTs, so the client is responsible for discarding them. The endpoint does not validate the token server-side.
+Returns an empty body after validating an active access token. Tokens are stateless JWTs, so the client is responsible for discarding them.
 
 ### Create staff
 
@@ -160,7 +163,7 @@ Returns an empty body. Tokens are stateless JWTs, so the client is responsible f
 }
 ```
 
-Response is `UserCreateResponse`.
+Response is `StaffResponse` (`id`, `email`, `full_name`, `role`, `is_active`, `created_at`).
 
 | Status | Meaning |
 | --- | --- |
@@ -169,6 +172,16 @@ Response is `UserCreateResponse`.
 | `403` | Caller is not an admin |
 | `409` | Email already registered |
 | `422` | Validation failed |
+
+### Staff directory
+
+`GET /auth/staff` · Bearer, role `admin` · `200`
+
+Supports `offset` (default `0`) and `limit` (default `100`, range 1–500). Returns staff accounts only, ordered by ID. The response includes `id`, `email`, `full_name`, `role`, `is_active`, and `created_at` (never the password hash).
+
+`GET /auth/staff/{id}` returns one staff member. Non-staff IDs return `404`.
+
+`PATCH /auth/staff/{id}` accepts `{"is_active": true}` or `{"is_active": false}` to activate or deactivate that staff account. Non-staff IDs return `404`.
 
 ### Forgot password
 
@@ -182,9 +195,9 @@ Response is `UserCreateResponse`.
 }
 ```
 
-Always returns `202` to avoid account enumeration. For existing active accounts a single-use token is stored (30-minute expiry, SHA-256 hashed, previous unused tokens invalidated).
+Always returns `202` to avoid account enumeration. For existing active accounts a single-use token is stored (30-minute expiry, SHA-256 hashed, previous unused tokens invalidated) and emailed when SMTP is configured. The raw token is never returned in the API response.
 
-> Token delivery is not implemented yet, so the raw token is currently neither emailed nor returned.
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, optional `SMTP_STARTTLS`, and `FRONTEND_URL` to enable delivery. Without SMTP configuration, the endpoint still returns `202` but logs that delivery is unavailable.
 
 ### Reset password
 
@@ -202,7 +215,7 @@ Always returns `202` to avoid account enumeration. For existing active accounts 
 | Field | Type | Rules |
 | --- | --- | --- |
 | `token` | string | Raw token from the reset request |
-| `new_password` | string | 8–128 characters |
+| `new_password` | string | 9–128 characters; uppercase, lowercase, and special character required |
 
 | Status | Meaning |
 | --- | --- |
@@ -504,9 +517,10 @@ Customers can only read and update their own profile; staff and admin can access
 | `GET` | `/subscriptions/{id}` | Owner or Staff/Admin | `200` | Get a subscription |
 | `PATCH` | `/subscriptions/{id}` | Staff/Admin | `200` | Update billing fields |
 | `POST` | `/subscriptions/{id}/confirm` | Staff/Admin | `200` | `draft`/`quotation` → `confirmed` |
-| `POST` | `/subscriptions/{id}/activate` | Staff/Admin | `200` | `confirmed`/`paused` → `active` |
-| `POST` | `/subscriptions/{id}/pause` | Staff/Admin | `200` | `active` → `paused` |
-| `POST` | `/subscriptions/{id}/close` | Staff/Admin | `200` | `confirmed`/`active`/`paused` → `closed` |
+| `POST` | `/subscriptions/{id}/activate` | Owner or Staff/Admin | `200` | `confirmed`/`paused` → `active`; customers may resume paused only |
+| `POST` | `/subscriptions/{id}/pause` | Owner or Staff/Admin | `200` | `active` → `paused` |
+| `POST` | `/subscriptions/{id}/close` | Owner or Staff/Admin | `200` | `confirmed`/`active`/`paused` → `closed` |
+| `POST` | `/subscriptions/{id}/renew` | Owner or Staff/Admin | `201` | Create a draft renewal |
 
 Customers only ever see their own subscriptions, even if they pass another `customer_id`. Staff and admin see everything.
 
@@ -527,8 +541,8 @@ Customers only ever see their own subscriptions, even if they pass another `cust
   "status": "draft",
   "created_at": "2026-10-31T07:07:01.659484Z",
   "lines": [
-    { "id": 3, "product_id": 1, "quantity": 1, "unit_price": "49.00", "tax_rate": "0.00" },
-    { "id": 4, "product_id": 2, "quantity": 1, "unit_price": "99.00", "tax_rate": "0.00" }
+    { "id": 3, "product_id": 1, "variant_id": null, "quantity": 1, "unit_price": "49.00", "tax_rate": "0.00", "tax_calculation_type": "exclusive" },
+    { "id": 4, "product_id": 2, "variant_id": null, "quantity": 1, "unit_price": "99.00", "tax_rate": "0.00", "tax_calculation_type": "exclusive" }
   ]
 }
 ```
@@ -553,7 +567,10 @@ Customers only ever see their own subscriptions, even if they pass another `cust
 | `product_id` | integer | Product from the plan line |
 | `quantity` | integer | Copied from the plan line |
 | `unit_price` | decimal string | Copied from the plan line |
-| `tax_rate` | decimal string | Default `0.00`, kept for later tax support |
+| `variant_id` | integer or null | Selected catalog variant, when applicable |
+| `variant_name` | string or null | Name snapshot for the selected variant |
+| `tax_rate` | decimal string | Tax rate snapshot |
+| `tax_calculation_type` | enum | `exclusive` / `inclusive` snapshot |
 
 ### List subscriptions
 
@@ -632,7 +649,8 @@ Allowed status changes:
 | `confirm` | `draft`, `quotation` | `confirmed` | — |
 | `activate` | `confirmed`, `paused` | `active` | Also resumes a paused subscription |
 | `pause` | `active` | `paused` | Plan must have `allow_pause = true` |
-| `close` | `confirmed`, `active`, `paused` | `closed` | Clears `next_billing_date` |
+| `close` | `confirmed`, `active`, `paused` | `closed` | Clears `next_billing_date`; early closure requires `allow_early_close` |
+| `renew` | `closed` | new `draft` subscription | Plan must have `allow_renewal = true`; copies line price, tax and variant snapshots |
 
 | Status | Meaning |
 | --- | --- |
@@ -643,7 +661,7 @@ Allowed status changes:
 | `404` | Subscription not found |
 | `409` | Transition not allowed from the current status |
 
-> `auto_close`, `allow_early_close`, and `allow_renewal` are stored on plans but not enforced yet.
+Customers may pause/resume/close only their own subscriptions. Auto-close runs during due-billing catch-up; a separate scheduler is not configured by the backend.
 
 ## Invoices
 
@@ -651,6 +669,9 @@ Allowed status changes:
 | --- | --- | --- | --- | --- |
 | `GET` | `/invoices` | Bearer | `200` | List invoices |
 | `GET` | `/invoices/{id}` | Owner or Staff/Admin | `200` | Get an invoice |
+| `POST` | `/invoices/{id}/confirm` | Staff/Admin | `200` | Confirm a draft invoice |
+| `POST` | `/invoices/{id}/cancel` | Staff/Admin | `200` | Cancel an unpaid invoice |
+| `POST` | `/invoices/{id}/send` | Staff/Admin | `202` | Email an invoice |
 | `POST` | `/billing/generate` | Staff/Admin | `200` | Generate invoices from subscriptions |
 
 There is no `POST /invoices`: invoices are always generated from a subscription's lines so the price snapshot is preserved. Customers only ever see their own invoices, even if they pass another `customer_id`.
@@ -680,8 +701,12 @@ There is no `POST /invoices`: invoices are always generated from a subscription'
       "id": 3,
       "product_id": 1,
       "description": "Cloud Hosting",
+      "variant_id": null,
+      "variant_name": null,
       "quantity": 1,
       "unit_price": "49.00",
+      "tax_rate": "0.00",
+      "tax_calculation_type": "exclusive",
       "discount_amount": "0.00",
       "tax_amount": "0.00",
       "line_total": "49.00"
@@ -700,7 +725,7 @@ There is no `POST /invoices`: invoices are always generated from a subscription'
 | `billing_period_start` | date | First day covered by the invoice |
 | `billing_period_end` | date | Start plus one billing interval |
 | `subtotal` | decimal string | Sum of line subtotals before tax |
-| `discount_amount` | decimal string | Always `0.00` until discounts are implemented |
+| `discount_amount` | decimal string | Applied discount snapshot |
 | `tax_amount` | decimal string | Sum of line tax amounts |
 | `total_amount` | decimal string | `subtotal - discount_amount + tax_amount` |
 | `status` | enum | `draft` / `confirmed` / `partially_paid` / `paid` / `cancelled` |
@@ -715,11 +740,15 @@ There is no `POST /invoices`: invoices are always generated from a subscription'
 | `description` | string | Product name at generation time |
 | `quantity` | integer | Copied from the subscription line |
 | `unit_price` | decimal string | Copied from the subscription line |
-| `discount_amount` | decimal string | Always `0.00` |
-| `tax_amount` | decimal string | `quantity × unit_price × tax_rate ÷ 100` |
+| `variant_id` | integer  null | Selected variant, when applicable |
+| `variant_name` | string  null | Variant label snapshot |
+| `tax_rate` | decimal string | Tax rate snapshot |
+| `tax_calculation_type` | enum | `exclusive` / `inclusive` snapshot |
+| `discount_amount` | decimal string | Allocated discount snapshot |
+| `tax_amount` | decimal string | Tax on the post-discount net amount |
 | `line_total` | decimal string | Subtotal plus tax |
 
-Generated invoices start as `confirmed`, meaning they are immediately billable. The `draft` status is reserved for a future review step; `cancelled` is not reachable yet.
+Generated invoices start as `confirmed`, meaning they are immediately billable. Draft invoices can be confirmed; unpaid draft or confirmed invoices can be cancelled if they have no payments. Sending requires SMTP configuration. Printing/PDF remains a client-side operation.
 
 ### List invoices
 
@@ -777,7 +806,10 @@ Generation rules:
 - The first invoice covers `subscription.start_date` → one billing interval later. Later invoices start at `next_billing_date`.
 - `next_billing_date` is advanced to the end of the billed period.
 - `due_date` is `issue_date` + the subscription's `payment_terms_days`.
-- Lines are snapshots of the subscription lines; changing product prices or tax rates later does not alter existing invoices.
+- Lines are snapshots of subscription prices, variants, taxes, and discounts; later catalog/rule changes do not alter existing invoices.
+- Tax defaults and inclusive/exclusive calculation are applied when a subscription tax snapshot is absent.
+- The best eligible discount is applied once per invoice; redemption and quota increment are committed with the invoice.
+- Due runs generate every missed billing period up to `as_of` and safely reserve each subscription/billing period in a unique table.
 - A subscription must be `active` or `confirmed` to be invoiced.
 - Invoicing the same subscription and billing period twice is rejected.
 
@@ -941,10 +973,66 @@ Refresh token payload:
 - Refresh tokens expire after `JWT_REFRESH_TOKEN_EXPIRE_DAYS` (default 7).
 - Protected routes reject `refresh` tokens; `/auth/refresh` rejects `access` tokens.
 
-## Planned Modules
+## Product Variants
 
-The remaining modules from [PRD §9](PRD.md#9-api-endpoints) are not implemented yet:
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/products/{id}/variants` | Bearer | `200` | List variants for a product |
+| `POST` | `/products/{id}/variants` | Admin | `201` | Add a variant |
+| `PATCH` | `/products/{id}/variants/{variant_id}` | Admin | `200` | Update a variant |
+| `DELETE` | `/products/{id}/variants/{variant_id}` | Admin | `204` | Delete a variant |
 
-- Product variants
-- Quotation templates
-- Taxes and discounts
+`ProductVariantCreate` accepts `attribute_name` and `attribute_value` (non-empty strings) and an optional `price_adjustment` (decimal, default `0.00`). The response also includes `id` and `product_id`. A missing product returns `404`; writes are admin-only.
+
+## Quotation Templates
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/quotation-templates` | Admin | `200` | List templates |
+| `POST` | `/quotation-templates` | Admin | `201` | Create a template and its lines |
+| `GET` | `/quotation-templates/{id}` | Admin | `200` | Get a template |
+| `PATCH` | `/quotation-templates/{id}` | Admin | `200` | Update a template and optionally replace its lines |
+| `DELETE` | `/quotation-templates/{id}` | Admin | `204` | Delete a template |
+
+List query parameters are `offset` (default `0`) and `limit` (default `100`, maximum `500`). A create request contains `name`, optional `description` and `default_plan_id`, `validity_days` (default `30`), and `product_lines` (default `[]`). Each line contains `product_id`, optional `variant_id`, `quantity` (default `1`), and `unit_price`. Patch accepts any subset; sending `product_lines` replaces the whole line set. Unknown products/plans/variants return `400`; validation failures return `422`.
+
+## Quotations
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/quotations` | Bearer | `200` | List quotations; customers are always scoped to themselves |
+| `POST` | `/quotations` | Staff/Admin | `201` | Create a quotation |
+| `GET` | `/quotations/{id}` | Owner or Staff/Admin | `200` | Get a quotation |
+| `PATCH` | `/quotations/{id}` | Owner or Staff/Admin | `200` | Transition quote status |
+
+Create accepts `customer_id`, `plan_id`, `valid_until`, optional `status` (`draft` or `sent`, default `draft`), `payment_terms`, `notes`, `tax_id`, `discount_code`, and `product_lines`. A line has `product_id`, optional `variant_id` and `description`, `quantity`, and `unit_price`. If `product_lines` is empty, the plan lines are snapshotted. Tax and discount totals are calculated by the backend; the response contains frozen line and total values plus customer/plan display fields.
+
+The active default tax is used when `tax_id` is omitted. Exclusive tax is added to the net subtotal; inclusive tax is extracted from the entered price. A supplied discount must be eligible at quote time; previews and quotations do not consume its redemption quota. On invoice generation, one best eligible discount may apply and its quota is reserved atomically.
+
+Allowed transitions are `draft → sent → accepted | rejected`; overdue draft/sent quotations become `expired`. Sending requires SMTP configuration and emails the customer a portal link. Accepting creates/links a **draft** subscription with frozen price, variant, and tax snapshots; it does not activate or invoice the subscription.
+
+## Taxes
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/taxes` | Admin | `200` | List tax rules |
+| `POST` | `/taxes` | Admin | `201` | Create a tax rule |
+| `GET` | `/taxes/{id}` | Admin | `200` | Get a tax rule |
+| `PATCH` | `/taxes/{id}` | Admin | `200` | Update a tax rule |
+
+List query parameters are `is_active`, `offset` (default `0`), and `limit` (default `100`, maximum `500`). `TaxCreate` contains `name`, `rate` (decimal from `0` through `100`), `calculation_type` (`exclusive` / `inclusive`, default `exclusive`), `is_default` (default `false`), and `is_active` (default `true`). Only one active default can exist; setting a new default clears the previous one in the same transaction. Invoices snapshot the selected rate and calculation type.
+
+## Discounts
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/discounts` | Admin | `200` | List discount rules |
+| `POST` | `/discounts` | Admin | `201` | Create a discount rule |
+| `GET` | `/discounts/{id}` | Admin | `200` | Get a discount rule |
+| `PATCH` | `/discounts/{id}` | Admin | `200` | Update a discount rule |
+| `DELETE` | `/discounts/{id}` | Admin | `204` | Delete an unused rule |
+| `POST` | `/discounts/eligibility` | Bearer | `200` | Preview eligibility without redeeming |
+
+List query parameters are `is_active`, `offset` (default `0`), and `limit` (default `100`, maximum `500`). `DiscountCreate` contains `name`, unique `code`, optional `description`, `discount_type` (`fixed` / `percentage`), `value`, optional `min_purchase`, `min_quantity` (default `1`), `start_date`, optional `end_date` and `usage_limit`, `applicability` (`all` / `product_specific` / `subscription_wide`), applicable product/plan IDs, and `is_active` (default `true`). Percentage values cannot exceed `100`; end dates must not precede start dates. Product and plan IDs must exist. Responses include `redemptions_count`, `applicable_products`, and `applicable_subscriptions` (plan IDs). Eligibility requests contain `code`, `purchase_amount`, `quantity`, and optional `product_id` / `plan_id`; previews never consume usage. A discount with redemptions cannot be deleted; deactivate it instead.
+
+Eligibility previews do not increment redemption counts. Invoice generation records the redemption and atomically enforces usage limits. Discounts with prior redemptions cannot be deleted; deactivate them instead.

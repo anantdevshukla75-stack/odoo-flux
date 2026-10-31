@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 
-from sqlalchemy import Column, Numeric
+from sqlalchemy import Column, Index, Numeric, text
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -111,6 +111,27 @@ class Product(SQLModel, table=True):
     )
 
 
+class ProductVariant(SQLModel, table=True):
+    __tablename__ = "product_variants"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    attribute_name: str = Field(nullable=False)
+
+    attribute_value: str = Field(nullable=False)
+
+    code: str | None = Field(default=None, nullable=True)
+
+    price_adjustment: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    is_active: bool = Field(default=True, nullable=False)
+
+
 class Plan(SQLModel, table=True):
     __tablename__ = "plans"
 
@@ -159,6 +180,52 @@ class PlanLine(SQLModel, table=True):
     unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
 
     plan: "Plan" = Relationship(back_populates="lines")
+
+
+class QuotationTemplate(SQLModel, table=True):
+    __tablename__ = "quotation_templates"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    description: str | None = Field(default=None, nullable=True)
+
+    default_plan_id: int | None = Field(
+        default=None, foreign_key="plans.id", nullable=True, index=True
+    )
+
+    validity_days: int = Field(default=30, nullable=False)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    product_lines: list["QuotationTemplateLine"] = Relationship(
+        back_populates="template", cascade_delete=True
+    )
+
+
+class QuotationTemplateLine(SQLModel, table=True):
+    __tablename__ = "quotation_template_lines"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    template_id: int = Field(
+        foreign_key="quotation_templates.id", nullable=False, index=True
+    )
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    variant_id: int | None = Field(
+        default=None, foreign_key="product_variants.id", nullable=True, index=True
+    )
+
+    quantity: int = Field(default=1, nullable=False)
+
+    unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    template: "QuotationTemplate" = Relationship(back_populates="product_lines")
 
 
 class SubscriptionStatus(str, Enum):
@@ -353,4 +420,331 @@ class Payment(SQLModel, table=True):
     )
 
     invoice: "Invoice" = Relationship(back_populates="payments")
+
+
+class TaxCalculationType(str, Enum):
+    EXCLUSIVE = "exclusive"
+    INCLUSIVE = "inclusive"
+
+
+class Tax(SQLModel, table=True):
+    __tablename__ = "taxes"
+    __table_args__ = (
+        Index(
+            "uq_taxes_single_active_default",
+            "is_default",
+            unique=True,
+            sqlite_where=text("is_active = 1 AND is_default = 1"),
+            postgresql_where=text("is_active = true AND is_default = true"),
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    rate: Decimal = Field(sa_column=Column(Numeric(5, 2), nullable=False))
+
+    calculation_type: TaxCalculationType = Field(
+        default=TaxCalculationType.EXCLUSIVE, nullable=False
+    )
+
+    is_default: bool = Field(default=False, nullable=False)
+
+    is_active: bool = Field(default=True, nullable=False)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class DiscountType(str, Enum):
+    FIXED = "fixed"
+    PERCENTAGE = "percentage"
+
+
+class DiscountAppliesTo(str, Enum):
+    ALL = "all"
+    PRODUCT_SPECIFIC = "product_specific"
+    SUBSCRIPTION_WIDE = "subscription_wide"
+
+
+class Discount(SQLModel, table=True):
+    __tablename__ = "discounts"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    code: str = Field(unique=True, index=True, nullable=False)
+
+    description: str | None = Field(default=None, nullable=True)
+
+    discount_type: DiscountType = Field(nullable=False)
+
+    value: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    min_purchase: Decimal | None = Field(
+        default=None, sa_column=Column(Numeric(12, 2), nullable=True)
+    )
+
+    min_quantity: int = Field(default=1, nullable=False)
+
+    start_date: date = Field(nullable=False)
+
+    end_date: date | None = Field(default=None, nullable=True)
+
+    usage_limit: int | None = Field(default=None, nullable=True)
+
+    redemptions_count: int = Field(default=0, nullable=False)
+
+    applicability: DiscountAppliesTo = Field(
+        default=DiscountAppliesTo.ALL, nullable=False
+    )
+
+    is_active: bool = Field(default=True, nullable=False)
+
+
+class DiscountProduct(SQLModel, table=True):
+    __tablename__ = "discount_products"
+
+    discount_id: int = Field(
+        foreign_key="discounts.id", primary_key=True, nullable=False
+    )
+
+    product_id: int = Field(
+        foreign_key="products.id", primary_key=True, nullable=False
+    )
+
+
+class DiscountPlan(SQLModel, table=True):
+    __tablename__ = "discount_plans"
+
+    discount_id: int = Field(
+        foreign_key="discounts.id", primary_key=True, nullable=False
+    )
+
+    plan_id: int = Field(
+        foreign_key="plans.id", primary_key=True, nullable=False
+    )
+
+
+class DiscountRedemption(SQLModel, table=True):
+    __tablename__ = "discount_redemptions"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    discount_id: int = Field(foreign_key="discounts.id", nullable=False, index=True)
+
+    subscription_id: int | None = Field(
+        default=None, foreign_key="subscriptions.id", nullable=True, index=True
+    )
+
+    invoice_id: int | None = Field(
+        default=None, foreign_key="invoices.id", nullable=True, index=True
+    )
+
+    redeemed_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class QuotationStatus(str, Enum):
+    DRAFT = "draft"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class Quotation(SQLModel, table=True):
+    __tablename__ = "quotations"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    quotation_number: str = Field(unique=True, index=True, nullable=False)
+
+    customer_id: int = Field(foreign_key="customers.id", nullable=False, index=True)
+
+    plan_id: int = Field(foreign_key="plans.id", nullable=False, index=True)
+
+    status: QuotationStatus = Field(default=QuotationStatus.DRAFT, nullable=False)
+
+    valid_until: date = Field(nullable=False)
+
+    payment_terms: str | None = Field(default=None, nullable=True)
+
+    notes: str | None = Field(default=None, nullable=True)
+
+    tax_id: int | None = Field(default=None, foreign_key="taxes.id", nullable=True)
+
+    discount_code: str | None = Field(default=None, nullable=True)
+
+    subtotal: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    tax_amount: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    discount_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    total_amount: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    subscription_id: int | None = Field(
+        default=None, foreign_key="subscriptions.id", nullable=True, index=True
+    )
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    product_lines: list["QuotationLine"] = Relationship(
+        back_populates="quotation", cascade_delete=True
+    )
+
+
+class QuotationLine(SQLModel, table=True):
+    __tablename__ = "quotation_lines"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    quotation_id: int = Field(
+        foreign_key="quotations.id", nullable=False, index=True
+    )
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    variant_id: int | None = Field(
+        default=None, foreign_key="product_variants.id", nullable=True, index=True
+    )
+
+    variant_price_adjustment: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    variant_name_snapshot: str | None = Field(default=None, nullable=True)
+
+    description: str = Field(nullable=False)
+
+    product_name_snapshot: str = Field(nullable=False)
+
+    quantity: int = Field(default=1, nullable=False)
+
+    unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    tax_rate: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(5, 2), nullable=False),
+    )
+
+    tax_calculation_type: TaxCalculationType = Field(
+        default=TaxCalculationType.EXCLUSIVE, nullable=False
+    )
+
+    tax_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    discount_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    line_total: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    quotation: "Quotation" = Relationship(back_populates="product_lines")
+
+
+class SubscriptionLineTax(SQLModel, table=True):
+    __tablename__ = "subscription_line_taxes"
+
+    subscription_line_id: int = Field(
+        foreign_key="subscription_lines.id", primary_key=True, nullable=False
+    )
+
+    tax_id: int | None = Field(default=None, foreign_key="taxes.id", nullable=True)
+
+    tax_rate: Decimal = Field(sa_column=Column(Numeric(5, 2), nullable=False))
+
+    calculation_type: TaxCalculationType = Field(nullable=False)
+
+
+class SubscriptionLineVariant(SQLModel, table=True):
+    __tablename__ = "subscription_line_variants"
+
+    subscription_line_id: int = Field(
+        foreign_key="subscription_lines.id", primary_key=True, nullable=False
+    )
+
+    variant_id: int = Field(foreign_key="product_variants.id", nullable=False)
+
+    variant_name_snapshot: str = Field(nullable=False)
+
+    price_adjustment_snapshot: Decimal = Field(
+        sa_column=Column(Numeric(12, 2), nullable=False)
+    )
+
+
+class SubscriptionDiscount(SQLModel, table=True):
+    __tablename__ = "subscription_discounts"
+
+    subscription_id: int = Field(
+        foreign_key="subscriptions.id", primary_key=True, nullable=False
+    )
+
+    discount_id: int = Field(foreign_key="discounts.id", nullable=False, index=True)
+
+
+class SubscriptionRenewal(SQLModel, table=True):
+    __tablename__ = "subscription_renewals"
+
+    source_subscription_id: int = Field(
+        foreign_key="subscriptions.id", primary_key=True, nullable=False
+    )
+
+    renewed_subscription_id: int = Field(
+        foreign_key="subscriptions.id", unique=True, nullable=False
+    )
+
+
+class InvoicePeriod(SQLModel, table=True):
+    __tablename__ = "invoice_periods"
+
+    subscription_id: int = Field(
+        foreign_key="subscriptions.id", primary_key=True, nullable=False
+    )
+
+    billing_period_start: date = Field(primary_key=True, nullable=False)
+
+    billing_period_end: date = Field(nullable=False)
+
+    invoice_id: int = Field(foreign_key="invoices.id", unique=True, nullable=False)
+
+
+class InvoiceLineSnapshot(SQLModel, table=True):
+    __tablename__ = "invoice_line_snapshots"
+
+    invoice_line_id: int = Field(
+        foreign_key="invoice_lines.id", primary_key=True, nullable=False
+    )
+
+    variant_id: int | None = Field(
+        default=None, foreign_key="product_variants.id", nullable=True
+    )
+
+    variant_name_snapshot: str | None = Field(default=None, nullable=True)
+
+    tax_id: int | None = Field(default=None, foreign_key="taxes.id", nullable=True)
+
+    tax_rate: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(5, 2), nullable=False),
+    )
+
+    tax_calculation_type: TaxCalculationType = Field(
+        default=TaxCalculationType.EXCLUSIVE, nullable=False
+    )
 

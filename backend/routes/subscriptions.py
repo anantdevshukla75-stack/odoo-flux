@@ -8,6 +8,52 @@ from routes.schemas import subscription
 router = APIRouter()
 
 
+def _to_response(
+    session: Session, db_subscription: model.Subscription
+) -> subscription.SubscriptionResponse:
+    lines = []
+    for line in db_subscription.lines:
+        tax_snapshot = session.get(model.SubscriptionLineTax, line.id)
+        variant_snapshot = session.get(model.SubscriptionLineVariant, line.id)
+        lines.append(
+            subscription.SubscriptionLineResponse(
+                id=line.id,
+                product_id=line.product_id,
+                variant_id=(
+                    variant_snapshot.variant_id if variant_snapshot else None
+                ),
+                variant_name=(
+                    variant_snapshot.variant_name_snapshot
+                    if variant_snapshot
+                    else None
+                ),
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                tax_rate=(
+                    tax_snapshot.tax_rate if tax_snapshot else line.tax_rate
+                ),
+                tax_calculation_type=(
+                    tax_snapshot.calculation_type
+                    if tax_snapshot
+                    else model.TaxCalculationType.EXCLUSIVE
+                ),
+            )
+        )
+    return subscription.SubscriptionResponse(
+        id=db_subscription.id,
+        subscription_number=db_subscription.subscription_number,
+        customer_id=db_subscription.customer_id,
+        plan_id=db_subscription.plan_id,
+        start_date=db_subscription.start_date,
+        expiry_date=db_subscription.expiry_date,
+        next_billing_date=db_subscription.next_billing_date,
+        payment_terms_days=db_subscription.payment_terms_days,
+        status=db_subscription.status,
+        created_at=db_subscription.created_at,
+        lines=lines,
+    )
+
+
 def _get_subscription_or_404(
     session: Session, subscription_id: int
 ) -> model.Subscription:
@@ -60,13 +106,14 @@ def list_subscriptions(
         # Customers only ever see their own subscriptions
         customer_id = db_customer.id
 
-    return subscriptions.list_subscriptions(
+    results = subscriptions.list_subscriptions(
         session,
         customer_id=customer_id,
         status=status,
         offset=offset,
         limit=limit,
     )
+    return [_to_response(session, result) for result in results]
 
 
 @router.post("", response_model=subscription.SubscriptionResponse, status_code=201)
@@ -76,9 +123,10 @@ def create_subscription(
     current_user: model.User = Depends(auth.require_staff),
 ):
     try:
-        return subscriptions.create_subscription(
+        created = subscriptions.create_subscription(
             session, **data.model_dump()
         )
+        return _to_response(session, created)
     except subscriptions.UnknownCustomerError:
         raise HTTPException(status_code=404, detail="Customer not found")
     except subscriptions.UnknownPlanError:
@@ -108,7 +156,7 @@ def get_subscription(
 
     _ensure_can_view(session, current_user, db_subscription)
 
-    return db_subscription
+    return _to_response(session, db_subscription)
 
 
 @router.patch(
@@ -133,11 +181,10 @@ def update_subscription(
         )
 
     if not changes:
-        return db_subscription
+        return _to_response(session, db_subscription)
 
-    return subscriptions.update_subscription(
-        session, db_subscription, changes
-    )
+    updated = subscriptions.update_subscription(session, db_subscription, changes)
+    return _to_response(session, updated)
 
 
 def _apply_transition(
@@ -162,10 +209,13 @@ def confirm_subscription(
     session: Session = Depends(db.get_session),
     current_user: model.User = Depends(auth.require_staff),
 ):
-    return _apply_transition(
+    return _to_response(
         session,
-        _get_subscription_or_404(session, subscription_id),
-        model.SubscriptionStatus.CONFIRMED,
+        _apply_transition(
+            session,
+            _get_subscription_or_404(session, subscription_id),
+            model.SubscriptionStatus.CONFIRMED,
+        ),
     )
 
 
@@ -176,12 +226,24 @@ def confirm_subscription(
 def activate_subscription(
     subscription_id: int,
     session: Session = Depends(db.get_session),
-    current_user: model.User = Depends(auth.require_staff),
+    current_user: model.User = Depends(auth.get_current_active_user),
 ):
-    return _apply_transition(
+    db_subscription = _get_subscription_or_404(session, subscription_id)
+    _ensure_can_view(session, current_user, db_subscription)
+    if (
+        current_user.role == model.UserRole.CUSTOMER
+        and db_subscription.status != model.SubscriptionStatus.PAUSED
+    ):
+        raise HTTPException(
+            status_code=403, detail="Customers can only resume paused subscriptions"
+        )
+    return _to_response(
         session,
-        _get_subscription_or_404(session, subscription_id),
-        model.SubscriptionStatus.ACTIVE,
+        _apply_transition(
+            session,
+            db_subscription,
+            model.SubscriptionStatus.ACTIVE,
+        ),
     )
 
 
@@ -192,12 +254,17 @@ def activate_subscription(
 def pause_subscription(
     subscription_id: int,
     session: Session = Depends(db.get_session),
-    current_user: model.User = Depends(auth.require_staff),
+    current_user: model.User = Depends(auth.get_current_active_user),
 ):
-    return _apply_transition(
+    db_subscription = _get_subscription_or_404(session, subscription_id)
+    _ensure_can_view(session, current_user, db_subscription)
+    return _to_response(
         session,
-        _get_subscription_or_404(session, subscription_id),
-        model.SubscriptionStatus.PAUSED,
+        _apply_transition(
+            session,
+            db_subscription,
+            model.SubscriptionStatus.PAUSED,
+        ),
     )
 
 
@@ -208,10 +275,40 @@ def pause_subscription(
 def close_subscription(
     subscription_id: int,
     session: Session = Depends(db.get_session),
-    current_user: model.User = Depends(auth.require_staff),
+    current_user: model.User = Depends(auth.get_current_active_user),
 ):
-    return _apply_transition(
+    db_subscription = _get_subscription_or_404(session, subscription_id)
+    _ensure_can_view(session, current_user, db_subscription)
+    return _to_response(
         session,
-        _get_subscription_or_404(session, subscription_id),
-        model.SubscriptionStatus.CLOSED,
+        _apply_transition(
+            session,
+            db_subscription,
+            model.SubscriptionStatus.CLOSED,
+        ),
     )
+
+
+@router.post(
+    "/{subscription_id}/renew",
+    response_model=subscription.SubscriptionResponse,
+    status_code=201,
+)
+def renew_subscription(
+    subscription_id: int,
+    session: Session = Depends(db.get_session),
+    current_user: model.User = Depends(auth.get_current_active_user),
+):
+    db_subscription = _get_subscription_or_404(session, subscription_id)
+    _ensure_can_view(session, current_user, db_subscription)
+    try:
+        renewed = subscriptions.renew_subscription(session, db_subscription)
+    except subscriptions.RenewalNotAllowedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except subscriptions.RenewalAlreadyCreatedError:
+        raise HTTPException(
+            status_code=409, detail="This subscription has already been renewed"
+        )
+    except subscriptions.InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return _to_response(session, renewed)

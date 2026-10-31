@@ -35,8 +35,13 @@ export function Staff() {
     e.preventDefault();
     setError('');
 
-    if (newStaff.password.length < 8) {
-      setError('Staff password must be at least 8 characters.');
+    const passwordIsValid =
+      newStaff.password.length > 8 &&
+      /[A-Z]/.test(newStaff.password) &&
+      /[a-z]/.test(newStaff.password) &&
+      /[^A-Za-z0-9\s]/.test(newStaff.password);
+    if (!passwordIsValid) {
+      setError('Password must be more than 8 characters and include uppercase, lowercase, and a special character.');
       return;
     }
 
@@ -193,8 +198,8 @@ export function Staff() {
             type="password"
             value={newStaff.password}
             onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
-            placeholder="Minimum 8 characters"
-            helperText="Staff credentials for platform access (min 8 characters)"
+            placeholder="More than 8 characters"
+            helperText="Include uppercase, lowercase, and a special character."
             required
           />
 

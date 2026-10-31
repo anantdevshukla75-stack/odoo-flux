@@ -134,7 +134,15 @@ class ApiClient {
   }
 
   async request(endpoint, options = {}) {
-    const { method = 'GET', body, isForm = false, skipAuthRetry = false, headers, ...rest } = options;
+    const {
+      method = 'GET',
+      body,
+      isForm = false,
+      skipAuthRetry = false,
+      responseType,
+      headers,
+      ...rest
+    } = options;
     const url = this.buildUrl(endpoint);
 
     const config = {
@@ -171,12 +179,14 @@ class ApiClient {
       if (typeof this.onUnauthorized === 'function') this.onUnauthorized();
     }
 
-    const data = await this.parseBody(response);
-
     if (!response.ok) {
+      const data = await this.parseBody(response);
       throw new ApiError(extractErrorMessage(data, response.status), response.status, data?.detail);
     }
 
+    if (responseType === 'blob') return response.blob();
+
+    const data = await this.parseBody(response);
     return data;
   }
 
@@ -211,6 +221,10 @@ class ApiClient {
 
   delete(endpoint) {
     return this.request(endpoint, { method: 'DELETE' });
+  }
+
+  getBlob(endpoint) {
+    return this.request(endpoint, { method: 'GET', responseType: 'blob' });
   }
 }
 
