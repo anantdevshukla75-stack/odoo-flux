@@ -51,8 +51,8 @@ import StaffOverdue from './pages/staff/StaffOverdue.jsx';
 
 // Customer Pages
 import CustomerDashboard from './pages/customer/CustomerDashboard.jsx';
-import CustomerInvoices from './pages/customer/CustomerInvoices.jsx';
-import CustomerPayments from './pages/customer/CustomerPayments.jsx';
+import CustomerQuotations from './pages/customer/CustomerQuotations.jsx';
+import CustomerSubscriptions from './pages/customer/CustomerSubscriptions.jsx';
 import CustomerProfile from './pages/customer/CustomerProfile.jsx';
 
 function RootRedirect() {
@@ -161,10 +161,10 @@ export function App() {
               <Route path="/customer/dashboard" element={<CustomerDashboard />} />
 
               {/* Customer Quotations & Subscriptions */}
-              <Route path="/customer/quotations" element={<Quotations basePath="/customer/quotations" />} />
-              <Route path="/customer/quotations/:quotationId" element={<QuotationDetails backPath="/customer/quotations" />} />
-              <Route path="/customer/subscriptions" element={<Subscriptions basePath="/customer/subscriptions" />} />
-              <Route path="/customer/subscriptions/:subscriptionId" element={<SubscriptionDetails backPath="/customer/subscriptions" />} />
+              <Route path="/customer/quotations" element={<CustomerQuotations />} />
+              <Route path="/customer/quotations/:quotationId" element={<CustomerQuotations />} />
+              <Route path="/customer/subscriptions" element={<CustomerSubscriptions />} />
+              <Route path="/customer/subscriptions/:subscriptionId" element={<CustomerSubscriptions />} />
 
               {/* Billing & Profile */}
               <Route path="/customer/invoices" element={<Invoices basePath="/customer/invoices" />} />

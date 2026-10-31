@@ -123,6 +123,17 @@ class MockDataService {
     return newCustomer;
   }
 
+  async updateCustomer(id, data) {
+    const list = this._get('bl_customers');
+    const index = list.findIndex(c => c.id === id || c.userId === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...data };
+      this._set('bl_customers', list);
+      return list[index];
+    }
+    return null;
+  }
+
   // --- Products ---
   async getProducts() {
     return this._get('bl_products');

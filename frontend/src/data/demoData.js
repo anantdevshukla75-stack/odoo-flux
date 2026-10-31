@@ -386,7 +386,30 @@ export const DEMO_QUOTATIONS = [
     discountAmount: 0.00,
     total: 883.82,
     validUntil: '2026-11-15',
-    createdAt: '2026-10-15T10:00:00Z'
+    createdAt: '2026-10-15T10:00:00Z',
+    productLines: [
+      { id: 'l-1', productName: 'Brightloop Platform Core', variantName: 'Enterprise Pro Tier', quantity: 1, unitPrice: 749.00 }
+    ]
+  },
+  {
+    id: 'quot-1004',
+    quotationNumber: 'QT-2026-004',
+    customerId: 'cust-001',
+    customerName: 'Acme Technologies Inc.',
+    planId: 'plan-002',
+    planName: 'Scale Enterprise Annual Upgrade',
+    status: 'SENT',
+    subtotal: 7490.00,
+    taxAmount: 1078.56,
+    discountAmount: 1498.00,
+    total: 7070.56,
+    validUntil: '2026-11-30',
+    createdAt: '2026-10-29T11:00:00Z',
+    notes: 'Proposed annual contract migration featuring 2 months complimentary platform access and 24/7 dedicated engineering SLA.',
+    productLines: [
+      { id: 'l-1', productName: 'Brightloop Platform Core', variantName: 'Annual Enterprise Tier', quantity: 1, unitPrice: 7490.00 },
+      { id: 'l-2', productName: 'Dedicated Enterprise SLA & Support', variantName: 'Tier 1 Support', quantity: 1, unitPrice: 0.00 }
+    ]
   },
   {
     id: 'quot-1002',
