@@ -92,8 +92,40 @@ export function ProductDetails() {
         />
       </div>
 
-      {/* Variants are not supported by the backend catalog yet; the product
-          record exposes a single base price. */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-900">Product Variants</h3>
+          <p className="text-xs text-slate-500 mt-1">Configured price adjustments are included in quotation snapshots.</p>
+        </div>
+        {product.variants?.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-5 py-3">Variant</th>
+                  <th className="px-5 py-3">Code</th>
+                  <th className="px-5 py-3 text-right">Adjustment</th>
+                  <th className="px-5 py-3 text-right">Adjusted Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {product.variants.map((variant) => (
+                  <tr key={variant.id}>
+                    <td className="px-5 py-3 font-medium">{variant.name}</td>
+                    <td className="px-5 py-3 font-mono text-slate-500">{variant.code || '—'}</td>
+                    <td className="px-5 py-3 text-right">{formatCurrency(variant.priceAdjustment)}</td>
+                    <td className="px-5 py-3 text-right font-semibold">
+                      {formatCurrency(product.salesPrice + variant.priceAdjustment)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-6 text-sm text-slate-400">No variants configured.</div>
+        )}
+      </div>
     </div>
   );
 }

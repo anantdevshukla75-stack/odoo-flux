@@ -1,9 +1,10 @@
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session
 
@@ -13,15 +14,20 @@ from database.auth import (
     create_password_reset_token,
     create_user,
     get_password_reset_token,
+    get_staff_by_id,
     get_user_by_email,
     get_user_by_id,
+    list_staff,
     set_user_password,
+    update_staff,
 )
 from helpers import auth
+from helpers import email as email_service
 from helpers.auth.jwt import REFRESH_TOKEN_TYPE
 from routes.schemas import user
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 
@@ -125,13 +131,15 @@ def me(current_user: model.User = Depends(auth.get_current_active_user)):
 
 
 @router.post("/logout", status_code=204)
-def logout():
+def logout(current_user: model.User = Depends(auth.get_current_active_user)):
     return Response(status_code=204)
 
 
 @router.post("/forgot-password", status_code=202)
 def forgot_password(
-    data: user.PasswordResetRequest, session: Session = Depends(db.get_session)
+    data: user.PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(db.get_session),
 ):
     db_user = get_user_by_email(session, data.email)
 
@@ -146,7 +154,12 @@ def forgot_password(
             + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
         )
 
-        # Stub: email delivery is not wired up yet, so raw_token is not exposed.
+        if email_service.is_configured():
+            background_tasks.add_task(
+                email_service.send_password_reset, db_user.email, raw_token
+            )
+        else:
+            logger.warning("Password reset requested but SMTP is not configured")
 
     return Response(status_code=202)
 
@@ -181,7 +194,7 @@ def reset_password(
     return Response(status_code=204)
 
 
-@router.post("/staff", response_model=user.UserCreateResponse, status_code=201)
+@router.post("/staff", response_model=user.StaffResponse, status_code=201)
 def staff(
     data: user.StaffCreate,
     session: Session = Depends(db.get_session),
@@ -199,3 +212,38 @@ def staff(
         raise HTTPException(status_code=409, detail="Email already registered")
 
     return new_user
+
+
+@router.get("/staff", response_model=list[user.StaffResponse])
+def staff_directory(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(db.get_session),
+    current_user: model.User = Depends(auth.require_admin),
+):
+    return list_staff(session, offset=offset, limit=limit)
+
+
+@router.get("/staff/{staff_id}", response_model=user.StaffResponse)
+def get_staff(
+    staff_id: int,
+    session: Session = Depends(db.get_session),
+    current_user: model.User = Depends(auth.require_admin),
+):
+    db_staff = get_staff_by_id(session, staff_id)
+    if db_staff is None:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    return db_staff
+
+
+@router.patch("/staff/{staff_id}", response_model=user.StaffResponse)
+def patch_staff(
+    staff_id: int,
+    data: user.StaffUpdate,
+    session: Session = Depends(db.get_session),
+    current_user: model.User = Depends(auth.require_admin),
+):
+    db_staff = get_staff_by_id(session, staff_id)
+    if db_staff is None:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    return update_staff(session, db_staff, is_active=data.is_active)

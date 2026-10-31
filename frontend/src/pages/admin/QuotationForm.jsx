@@ -38,6 +38,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   // Add Product Line local state
   const [lineProductId, setLineProductId] = useState('');
+  const [lineVariantId, setLineVariantId] = useState('');
   const [lineQty, setLineQty] = useState(1);
   const [linePrice, setLinePrice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,13 +94,21 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
             setValidityDays(tmpl.validityDays);
           }
           if (tmpl.productLines && tmpl.productLines.length > 0) {
-            const mapped = tmpl.productLines.map(l => ({
-              id: `line-${Date.now()}-${Math.random()}`,
-              productId: l.productId,
-              productName: l.productName,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice
-            }));
+            const mapped = tmpl.productLines.map((line) => {
+              const product = prodList.find((item) => String(item.id) === String(line.productId));
+              const variant = product?.variants?.find(
+                (item) => String(item.id) === String(line.variantId)
+              );
+              return {
+                id: `line-${Date.now()}-${Math.random()}`,
+                productId: line.productId,
+                variantId: line.variantId || null,
+                variantName: variant?.name || '',
+                productName: line.productName || product?.name,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice
+              };
+            });
             setProductLines(mapped);
           }
         }
@@ -126,13 +135,21 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       setValidityDays(tmpl.validityDays);
     }
     if (tmpl.productLines && tmpl.productLines.length > 0) {
-      const mapped = tmpl.productLines.map(l => ({
-        id: `line-${Date.now()}-${Math.random()}`,
-        productId: l.productId,
-        productName: l.productName,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice
-      }));
+      const mapped = tmpl.productLines.map((line) => {
+        const product = products.find((item) => String(item.id) === String(line.productId));
+        const variant = product?.variants?.find(
+          (item) => String(item.id) === String(line.variantId)
+        );
+        return {
+          id: `line-${Date.now()}-${Math.random()}`,
+          productId: line.productId,
+          variantId: line.variantId || null,
+          variantName: variant?.name || '',
+          productName: line.productName || product?.name,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice
+        };
+      });
       setProductLines(mapped);
     }
   };
@@ -159,16 +176,27 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   const handleProductSelect = (pId) => {
     setLineProductId(pId);
+    setLineVariantId('');
     const prod = products.find(p => String(p.id) === String(pId));
     if (prod) {
       setLinePrice(prod.salesPrice);
     }
   };
 
+  const handleVariantSelect = (variantId) => {
+    setLineVariantId(variantId);
+    const product = products.find((item) => String(item.id) === String(lineProductId));
+    const variant = product?.variants?.find((item) => String(item.id) === String(variantId));
+    setLinePrice(
+      product ? Number(product.salesPrice) + Number(variant?.priceAdjustment || 0) : ''
+    );
+  };
+
   const handleAddLine = (e) => {
     e.preventDefault();
     const prod = products.find(p => String(p.id) === String(lineProductId));
     if (!prod) return;
+    const variant = prod.variants?.find((item) => String(item.id) === String(lineVariantId));
 
     const qty = parseInt(lineQty, 10) || 1;
     const price = parseFloat(linePrice) || 0;
@@ -176,6 +204,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
     const newLine = {
       id: `line-${Date.now()}-${Math.random().toString().slice(-4)}`,
       productId: prod.id,
+      variantId: variant?.id || null,
+      variantName: variant?.name || '',
       productName: prod.name,
       quantity: qty,
       unitPrice: price
@@ -210,7 +240,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       const result = await apiService.checkDiscountEligibility(found, {
         purchaseAmount: subtotal,
         quantity,
-        productId: productLines[0]?.productId,
+        productId:
+          productLines[0]?.productId || selectedPlan?.products?.[0]?.productId,
         planId: selectedPlanId
       });
       if (!result.eligible) {
@@ -262,6 +293,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   const expirationDate = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000)
     .toISOString()
     .split('T')[0];
+
+  const activeProduct = products.find((product) => String(product.id) === String(lineProductId));
 
   const handleSaveQuotation = async (status = 'DRAFT') => {
     if (!selectedCustomer || !selectedPlan) {
@@ -420,7 +453,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
           </h3>
 
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <Select
                 label="Product"
                 value={lineProductId}
@@ -429,6 +462,20 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                   value: p.id,
                   label: `${p.name} (${formatCurrency(p.salesPrice)})`
                 }))}
+                className="mb-0"
+              />
+
+              <Select
+                label="Pricing Variant"
+                value={lineVariantId}
+                onChange={(e) => handleVariantSelect(e.target.value)}
+                options={[
+                  { value: '', label: 'Base product' },
+                  ...(activeProduct?.variants || []).filter((variant) => variant.isActive).map((variant) => ({
+                    value: variant.id,
+                    label: `${variant.name} (+${formatCurrency(variant.priceAdjustment)})`
+                  }))
+                ]}
                 className="mb-0"
               />
 
@@ -471,6 +518,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                 <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase font-semibold">
                   <tr>
                     <th className="px-4 py-2.5">Product</th>
+                    <th className="px-4 py-2.5">Variant</th>
                     <th className="px-4 py-2.5 text-center">Qty</th>
                     <th className="px-4 py-2.5">Unit Price</th>
                     <th className="px-4 py-2.5 text-center">Tax</th>
@@ -482,6 +530,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                   {productLines.map((l) => (
                     <tr key={l.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 font-semibold text-slate-900">{l.productName}</td>
+                      <td className="px-4 py-3 text-slate-600">{l.variantName || '—'}</td>
                       <td className="px-4 py-3 text-center font-bold">{l.quantity}</td>
                       <td className="px-4 py-3 text-slate-600">{formatCurrency(l.unitPrice)}</td>
                       <td className="px-4 py-3 text-center text-slate-500 font-mono">

@@ -42,6 +42,8 @@ async function rawCustomers() {
 }
 
 const rawProducts = () => apiClient.get('/products');
+const rawProductVariants = (productId) =>
+  apiClient.get(`/products/${productId}/variants`);
 const rawPlans = () => apiClient.get('/plans');
 const rawSubscriptions = (params) => apiClient.get('/subscriptions', params);
 const rawInvoices = (params) => apiClient.get('/invoices', params);
@@ -93,6 +95,16 @@ function normalizeProduct(product) {
     notes: product.notes || '',
     variants: [],
     createdAt: product.created_at
+  };
+}
+
+function normalizeVariant(variant) {
+  return {
+    id: variant.id,
+    name: variant.attribute_value || variant.attribute_name,
+    code: variant.code || '',
+    priceAdjustment: toNumber(variant.price_adjustment),
+    isActive: variant.is_active !== false
   };
 }
 
@@ -202,9 +214,12 @@ function normalizeSubscription(subscription, { planById = new Map(), customerByI
     lines: lines.map((line) => ({
       id: line.id,
       productId: line.product_id,
+      variantId: line.variant_id ?? null,
+      variantName: line.variant_name || '',
       quantity: line.quantity,
       unitPrice: toNumber(line.unit_price),
-      taxRate: toNumber(line.tax_rate)
+      taxRate: toNumber(line.tax_rate),
+      taxCalculationType: toUpper(line.tax_calculation_type || 'EXCLUSIVE')
     }))
   };
 }
@@ -264,8 +279,12 @@ function normalizeInvoice(
       id: line.id,
       productId: line.product_id,
       description: line.description,
+      variantId: line.variant_id ?? null,
+      variantName: line.variant_name || '',
       quantity: line.quantity,
       unitPrice: toNumber(line.unit_price),
+      taxRate: toNumber(line.tax_rate),
+      taxCalculationType: toUpper(line.tax_calculation_type || 'EXCLUSIVE'),
       taxAmount: toNumber(line.tax_amount),
       discountAmount: toNumber(line.discount_amount),
       amount: toNumber(line.line_total)
@@ -368,6 +387,8 @@ function normalizeTemplate(template, { planById = new Map(), productById = new M
       return {
         id: line.id,
         productId,
+        variantId: line.variant_id ?? line.variantId ?? null,
+        variantPriceAdjustment: toNumber(line.variant_price_adjustment ?? line.variantPriceAdjustment),
         productName:
           line.product_name || line.productName || productById.get(productId)?.name || `Product #${productId}`,
         quantity: Number(line.quantity) || 1,
@@ -386,6 +407,7 @@ function templatePayload(template) {
     validity_days: Number(template.validityDays) || 30,
     product_lines: (template.productLines || []).map((line) => ({
       product_id: Number(line.productId),
+      variant_id: line.variantId ? Number(line.variantId) : null,
       quantity: Number(line.quantity) || 1,
       unit_price: toNumber(line.unitPrice)
     }))
@@ -426,6 +448,7 @@ function normalizeQuotation(quotation, { customerById = new Map(), planById = ne
       return {
         id: line.id,
         productId,
+        variantId: line.variant_id ?? line.variantId ?? null,
         productName:
           line.product_name || line.productName || line.description || productById.get(productId)?.name || `Product #${productId}`,
         quantity: Number(line.quantity) || 1,
@@ -451,6 +474,7 @@ function quotationPayload(quotation) {
     discount_code: quotation.discountCode || null,
     product_lines: (quotation.productLines || []).map((line) => ({
       product_id: Number(line.productId),
+      variant_id: line.variantId ? Number(line.variantId) : null,
       description: line.productName || '',
       quantity: Number(line.quantity) || 1,
       unit_price: toNumber(line.unitPrice)
@@ -799,11 +823,21 @@ export async function updateCustomer(id, data) {
 
 export async function getProducts() {
   const products = await rawProducts();
-  return products.map(normalizeProduct);
+  const variants = await Promise.all(
+    products.map((product) => rawProductVariants(product.id))
+  );
+  return products.map((product, index) => ({
+    ...normalizeProduct(product),
+    variants: variants[index].map(normalizeVariant)
+  }));
 }
 
 export async function getProductById(id) {
-  return normalizeProduct(await apiClient.get(`/products/${id}`));
+  const [product, variants] = await Promise.all([
+    apiClient.get(`/products/${id}`),
+    rawProductVariants(id)
+  ]);
+  return { ...normalizeProduct(product), variants: variants.map(normalizeVariant) };
 }
 
 export async function createProduct(productData) {
@@ -821,6 +855,52 @@ export async function toggleProductStatus(id) {
   return normalizeProduct(
     await apiClient.patch(`/products/${id}`, { is_active: !current.is_active })
   );
+}
+
+function variantPayload(variant) {
+  return {
+    attribute_name: String(variant.attributeName || 'Variant').trim(),
+    attribute_value: String(variant.name || '').trim(),
+    code: String(variant.code || '').trim() || null,
+    price_adjustment: toNumber(variant.priceAdjustment),
+    is_active: variant.isActive !== false
+  };
+}
+
+export async function downloadInvoicePdf(id) {
+  const invoice = await apiClient.get(`/invoices/${id}`);
+  const blob = await apiClient.getBlob(`/invoices/${id}/pdf`);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${invoice.invoice_number || `invoice-${id}`}.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function createProductVariant(productId, variant) {
+  return normalizeVariant(
+    await apiClient.post(
+      `/products/${productId}/variants`,
+      variantPayload(variant)
+    )
+  );
+}
+
+export async function updateProductVariant(productId, variantId, variant) {
+  return normalizeVariant(
+    await apiClient.patch(
+      `/products/${productId}/variants/${variantId}`,
+      variantPayload(variant)
+    )
+  );
+}
+
+export async function deleteProductVariant(productId, variantId) {
+  await apiClient.delete(`/products/${productId}/variants/${variantId}`);
+  return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1057,6 +1137,9 @@ export const apiService = {
   createProduct,
   updateProduct,
   toggleProductStatus,
+  createProductVariant,
+  updateProductVariant,
+  deleteProductVariant,
   getPlans,
   getPlanById,
   createPlan,
@@ -1093,6 +1176,7 @@ export const apiService = {
   getInvoices,
   getInvoiceById,
   getInvoiceDetails,
+  downloadInvoicePdf,
   getPayments,
   recordPayment
 };

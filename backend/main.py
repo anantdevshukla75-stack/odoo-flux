@@ -9,11 +9,15 @@ from routes import (
     billing,
     customers,
     dashboard,
+    discounts,
     invoices,
     payments,
     plans,
     products,
+    quotations,
+    quotation_templates,
     subscriptions,
+    taxes,
 )
 
 
@@ -44,6 +48,20 @@ app.include_router(
 )
 app.include_router(
     products.router, prefix=f"{API_V1_PREFIX}/products", tags=["products"]
+)
+app.include_router(
+    quotation_templates.router,
+    prefix=f"{API_V1_PREFIX}/quotation-templates",
+    tags=["quotation templates"],
+)
+app.include_router(
+    quotations.router, prefix=f"{API_V1_PREFIX}/quotations", tags=["quotations"]
+)
+app.include_router(
+    taxes.router, prefix=f"{API_V1_PREFIX}/taxes", tags=["taxes"]
+)
+app.include_router(
+    discounts.router, prefix=f"{API_V1_PREFIX}/discounts", tags=["discounts"]
 )
 app.include_router(
     plans.router, prefix=f"{API_V1_PREFIX}/plans", tags=["plans"]

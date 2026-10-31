@@ -30,10 +30,10 @@ Every endpoint documented in [`API-Specifications.md`](file:///e:/odoo%20flux/AP
 | `POST` | `/api/v1/auth/register` | Defined | `routes/auth.py:register` | Public (No Auth) | `user.UserCreate` (JSON) | `user.UserCreateResponse` (`201`) | **MATCH** |
 | `POST` | `/api/v1/auth/login` | Defined | `routes/auth.py:login` | Public (No Auth) | `OAuth2PasswordRequestForm` (Form URL-encoded) | `user.UserLoginResponse` (`200`) | **MATCH** |
 | `POST` | `/api/v1/auth/refresh` | Defined | `routes/auth.py:refresh` | Public (No Auth) | `user.TokenRefresh` (JSON) | `user.UserLoginResponse` (`200`) | **MATCH** |
-| `POST` | `/api/v1/auth/logout` | Defined | `routes/auth.py:logout` | Public (Doc says Bearer) | None | Empty Body (`204`) | **MISMATCH (Security)**: Backend does not enforce auth dependency on logout |
+| `POST` | `/api/v1/auth/logout` | Defined | `routes/auth.py:logout` | Bearer (Active User) | None | Empty Body (`204`) | **MATCH**: Requires an active access token |
 | `GET` | `/api/v1/auth/me` | Defined | `routes/auth.py:me` | Bearer (Active User) | None | `user.UserCreateResponse` (`200`) | **MATCH**: Note: `role` is in JWT, not in body |
-| `POST` | `/api/v1/auth/staff` | Defined | `routes/auth.py:staff` | Admin Only | `user.StaffCreate` (JSON) | `user.UserCreateResponse` (`201`) | **MATCH** |
-| `POST` | `/api/v1/auth/forgot-password` | Defined | `routes/auth.py:forgot_password` | Public (No Auth) | `user.PasswordResetRequest` (JSON) | Empty Body (`202`) | **MATCH**: Email delivery is stubbed |
+| `POST` | `/api/v1/auth/staff` | Defined | `routes/auth.py:staff` | Admin Only | `user.StaffCreate` (JSON) | `user.StaffResponse` (`201`) | **MATCH** |
+| `POST` | `/api/v1/auth/forgot-password` | Defined | `routes/auth.py:forgot_password` | Public (No Auth) | `user.PasswordResetRequest` (JSON) | Empty Body (`202`) | **MATCH**: Sends reset link when SMTP is configured; never returns token |
 | `POST` | `/api/v1/auth/reset-password` | Defined | `routes/auth.py:reset_password` | Public (No Auth) | `user.PasswordReset` (JSON) | Empty Body (`204`) | **MATCH** |
 | `GET` | `/api/v1/products` | Defined | `routes/products.py:list_products` | Bearer (Active User) | Query: `is_active`, `offset`, `limit` | `list[ProductResponse]` (`200`) | **MATCH** |
 | `POST` | `/api/v1/products` | Defined | `routes/products.py:create_product` | Admin Only | `product.ProductCreate` (JSON) | `product.ProductResponse` (`201`) | **MATCH** |
@@ -112,12 +112,12 @@ Every endpoint documented in [`API-Specifications.md`](file:///e:/odoo%20flux/AP
 - **Frontend Implication:** The frontend authentication context must decode the `role` directly from the decoded JWT `access_token` payload (`jwtDecode(token).role`).
 
 ### 3.4 Password Validation Rules
-- Enforced by Pydantic: `min_length=8`, `max_length=128`.
+- Enforced by Pydantic: 9–128 characters, with uppercase, lowercase, and special-character requirements.
 - Hashing: Argon2 via `pwdlib` (`argon2-cffi`).
 
 ### 3.5 Password Reset Implementation
 - `POST /auth/forgot-password`: Generates an alphanumeric secure token and hashes it via SHA-256 into table `password_reset_tokens`. Token valid for 30 minutes.
-- **Email Delivery Limitation:** The backend currently stubs email delivery; raw reset tokens are not transmitted externally.
+- **Email Delivery:** Reset links are delivered through SMTP when configured; raw tokens are never returned by the API. Without SMTP settings, account-enumeration-safe `202` responses are preserved but no email is sent.
 
 ---
 
@@ -161,21 +161,21 @@ The database schema is defined in [`backend/database/model.py`](file:///e:/odoo%
 
 ## 5. API Limitations & Unsupported Endpoints
 
-The following operations were systematically audited against the backend source and confirmed to be **unimplemented / unsupported** at the HTTP routing layer:
+This audit originally recorded the following gaps. Backend status has been updated after the follow-up implementation; the frontend still needs to replace its mock-service calls with the available APIs.
 
 | Domain / Operation | Documented Endpoint | Exists in Backend Source? | Backend Implementation Reality | Frontend Strategy |
 |---|---|---|---|---|
-| **Product Variants** | None | **NO** | No variant table or price adjustment column in `model.py` | Display base products; handle demo Odoo price adjustments client-side |
-| **Quotation Templates** | None | **NO** | No `quotation_templates` table or router | Preserve client-side template definitions |
-| **Taxes Configuration** | None | **NO** | Fixed `tax_rate` on subscription line, default `0.00` | Support client-side preview; calculate tax lines |
-| **Discounts & Coupons** | None | **NO** | `discount_amount` column exists on invoice, but no coupon/discount engine | Maintain demo coupon engine in frontend client layer |
-| **Staff Listing** | `GET /auth/staff` | **NO** | Only `POST /auth/staff` exists | Show created staff in local state or inspect users table if needed |
-| **Quotation Creation** | `POST /quotations` | **NO** | Subscriptions with status `draft`/`quotation` represent proposals | Use `POST /subscriptions` with initial status |
-| **Quotation Sending** | `POST /quotations/{id}/send` | **NO** | No quotation send or email endpoints | Simulate sending state in UI |
-| **Subscription Renewal** | `POST /subscriptions/{id}/renew` | **NO** | No renew endpoint; manual billing advances cycle | Trigger billing via `POST /billing/generate` |
+| **Product Variants** | `GET, POST, PATCH, DELETE /products/{product_id}/variants` | **YES** | Variant values and adjustments persist; quote, subscription, and invoice line snapshots retain selected variant and price | Frontend API adapter still needs to normalize variant shapes |
+| **Quotation Templates** | CRUD `/quotation-templates` | **YES** | Templates support default plan, validity, product and variant lines | Frontend API adapter still uses mocks |
+| **Taxes Configuration** | CRUD `/taxes` | **YES** | Admin-only rules support default selection and inclusive/exclusive calculations; invoices snapshot applied rates | Frontend API adapter still uses mocks |
+| **Discounts & Coupons** | CRUD `/discounts`, `POST /discounts/eligibility` | **YES** | Eligibility preview is non-consuming; billing records redemption and enforces usage limits atomically | Frontend API adapter still uses mocks |
+| **Staff Directory** | `GET /auth/staff`, `GET/PATCH /auth/staff/{id}` | **YES** | Admin can list, view, activate and deactivate staff | Frontend API adapter still uses mocks |
+| **Quotation Creation** | `POST /quotations`, `GET /quotations/{id}` | **YES** | Quotes freeze line/tax/discount totals; acceptance creates a draft subscription | Frontend API adapter still uses mocks |
+| **Quotation Sending** | `PATCH /quotations/{id}` status `sent` | **YES** | Email is sent when SMTP is configured | Configure SMTP and connect the frontend |
+| **Subscription Renewal** | `POST /subscriptions/{id}/renew` | **YES** | Plan must permit renewal; renewal creates a new draft with copied snapshots | Frontend API adapter still uses mocks |
 | **Invoice PDF Download** | `GET /invoices/{id}/pdf` | **NO** | No PDF rendering pipeline on backend | Use client-side print layout (`@media print` in `InvoicePrint.jsx`) |
-| **Invoice Email Delivery** | `POST /invoices/{id}/send` | **NO** | No outbound mailer attached | Simulate email notification confirmation in UI |
-| **Invoice Cancellation** | `POST /invoices/{id}/cancel` | **NO** | Enum has `cancelled`, but no endpoint to transition | Restrict cancellation to simulation/demo mode |
+| **Invoice Email Delivery** | `POST /invoices/{id}/send` | **YES** | SMTP-backed; requires mail configuration | Configure SMTP and connect the frontend |
+| **Invoice Cancellation** | `POST /invoices/{id}/cancel` | **YES** | Only unpaid invoices without payments can be cancelled | Frontend API adapter still uses mocks |
 | **Payment Voiding / Refund**| `DELETE /payments/{id}` | **NO** | Payments are immutable append-only records | Display settled state without rollback |
 | **Customer Payment Action**| `POST /payments` | **RESTRICTED** | Endpoint enforces `require_staff` (Admin or Staff only) | Customers cannot directly invoke `/payments`; customer payment flow requires staff role or simulation wrapper |
 
@@ -191,8 +191,8 @@ The following operations were systematically audited against the backend source 
 
 ### 6.2 Dual-Mode API Client (`apiClient.js`)
 - Provide a configuration flag (e.g. `VITE_USE_LIVE_API=true/false`).
-- For supported endpoints (`/auth/*`, `/products/*`, `/plans/*`, `/customers/*`, `/subscriptions/*`, `/invoices/*`, `/billing/*`, `/payments/*`, `/dashboard/*`), dispatch directly to `http://127.0.0.1:8000/api/v1`.
-- For unsupported modules (Coupons/Discounts, Product Variants, Quotation Templates, PDF generation), gracefully provide frontend demonstration mocks so the user interface remains rich, responsive, and completely functional.
+- For supported endpoints (`/auth/*`, `/products/*`, `/plans/*`, `/quotation-templates/*`, `/quotations/*`, `/customers/*`, `/subscriptions/*`, `/invoices/*`, `/billing/*`, `/payments/*`, `/taxes/*`, `/discounts/*`, `/dashboard/*`), dispatch directly to `http://127.0.0.1:8000/api/v1`.
+- Remaining backend gaps include server-generated invoice PDFs and an in-process billing scheduler; invoice print is available in the frontend and due billing can be invoked by an external scheduler.
 
 ---
 

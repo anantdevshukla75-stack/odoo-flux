@@ -3,6 +3,7 @@ from sqlmodel import Session
 
 from database import db, invoices, model
 from helpers import auth
+from routes.invoices import to_response
 from routes.schemas import invoice
 
 router = APIRouter()
@@ -15,16 +16,18 @@ def generate_invoices(
     current_user: model.User = Depends(auth.require_staff),
 ):
     if data.subscription_id is None:
-        return invoices.generate_due_invoices(session, as_of=data.as_of)
+        generated = invoices.generate_due_invoices(session, as_of=data.as_of)
+        return [to_response(session, item) for item in generated]
 
     try:
-        return [
+        generated = [
             invoices.create_invoice(
                 session,
                 subscription_id=data.subscription_id,
                 issue_date=data.as_of,
             )
         ]
+        return [to_response(session, item) for item in generated]
     except invoices.UnknownSubscriptionError:
         raise HTTPException(status_code=404, detail="Subscription not found")
     except invoices.SubscriptionNotBillableError:

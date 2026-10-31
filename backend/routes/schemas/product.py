@@ -47,3 +47,33 @@ class ProductResponse(ProductBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductVariantCreate(BaseModel):
+    attribute_name: str = Field(min_length=1, max_length=255)
+    attribute_value: str = Field(min_length=1, max_length=255)
+    code: str | None = Field(default=None, max_length=100)
+    price_adjustment: Decimal = Field(default=Decimal("0.00"))
+    is_active: bool = True
+
+
+class ProductVariantResponse(ProductVariantCreate):
+    id: int
+    product_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductVariantUpdate(BaseModel):
+    attribute_name: str | None = Field(default=None, min_length=1, max_length=255)
+    attribute_value: str | None = Field(default=None, min_length=1, max_length=255)
+    code: str | None = Field(default=None, max_length=100)
+    price_adjustment: Decimal | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_nulls(self):
+        for field in ("attribute_name", "attribute_value", "price_adjustment", "is_active"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
