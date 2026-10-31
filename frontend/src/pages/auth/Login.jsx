@@ -1,13 +1,50 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, UserCheck, User, ArrowRight, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../context/useAuth.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
+import { DEMO_ACCOUNTS } from '../../services/authService.js';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 
+const ROLE_ICONS = {
+  [ROLES.ADMIN]: ShieldCheck,
+  [ROLES.STAFF]: UserCheck,
+  [ROLES.CUSTOMER]: User
+};
+
+const ROLE_STYLES = {
+  [ROLES.ADMIN]: {
+    button: 'border-indigo-200 bg-indigo-50/60 hover:bg-indigo-50 text-indigo-950',
+    icon: 'bg-indigo-600 text-white',
+    title: 'text-indigo-950',
+    subtitle: 'text-indigo-700',
+    arrow: 'text-indigo-600'
+  },
+  [ROLES.STAFF]: {
+    button: 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800',
+    icon: 'bg-sky-600 text-white',
+    title: 'text-slate-900',
+    subtitle: 'text-slate-500',
+    arrow: 'text-slate-400'
+  },
+  [ROLES.CUSTOMER]: {
+    button: 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800',
+    icon: 'bg-emerald-600 text-white',
+    title: 'text-slate-900',
+    subtitle: 'text-slate-500',
+    arrow: 'text-slate-400'
+  }
+};
+
+function landingPath(role) {
+  if (role === ROLES.ADMIN) return '/admin/dashboard';
+  if (role === ROLES.STAFF) return '/staff/dashboard';
+  return '/customer/dashboard';
+}
+
 export function Login() {
-  const { login, switchDemoRole } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('admin@odooflux.local');
@@ -15,44 +52,29 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleStandardLogin = async (e) => {
-    e.preventDefault();
+  const signIn = async (credentials) => {
     setError('');
     setLoading(true);
 
     try {
-      const res = await login(email, password);
-      if (res.user.role === ROLES.ADMIN) {
-        navigate('/admin/dashboard');
-      } else if (res.user.role === ROLES.STAFF) {
-        navigate('/staff/dashboard');
-      } else {
-        navigate('/customer/dashboard');
-      }
+      const res = await login(credentials.email, credentials.password);
+      navigate(landingPath(res.user.role));
     } catch (err) {
-      if (err.status === 401) {
-        setError('Incorrect email or password. Please check your credentials.');
-      } else if (err.status === 403) {
-        setError('Account is inactive. Please contact your system administrator.');
-      } else if (err.status === 422) {
-        setError(err.message || 'Validation error: please supply a valid email and password.');
-      } else {
-        setError(err.message || 'Authentication failed. Please verify your credentials.');
-      }
+      setError(err?.message || 'Unable to sign in. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickDemoAccess = (role) => {
-    switchDemoRole(role);
-    if (role === ROLES.ADMIN) {
-      navigate('/admin/dashboard');
-    } else if (role === ROLES.STAFF) {
-      navigate('/staff/dashboard');
-    } else {
-      navigate('/customer/dashboard');
-    }
+  const handleStandardLogin = (e) => {
+    e.preventDefault();
+    signIn({ email, password });
+  };
+
+  const handleQuickDemoAccess = (account) => {
+    setEmail(account.email);
+    setPassword(account.password);
+    signIn(account);
   };
 
   return (
@@ -69,11 +91,12 @@ export function Login() {
           </p>
         </div>
 
-        {/* Demo Mode Notice */}
+        {/* Demo credentials notice */}
         <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-start gap-3 text-xs text-amber-900">
           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="leading-relaxed">
-            <strong className="font-semibold">Interactive Mode:</strong> Sign in with active backend credentials (<code className="bg-amber-100 px-1 rounded">admin@odooflux.local</code>) or choose an instant role preview below.
+            <strong className="font-semibold">Demo environment:</strong> seeded accounts use the password{' '}
+            <code className="font-mono">Password123!</code>. Pick a role below to sign in instantly.
           </div>
         </div>
 
@@ -131,60 +154,35 @@ export function Login() {
           {/* Quick Demo Access Options */}
           <div className="mt-8 pt-6 border-t border-slate-100">
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center mb-3">
-              Fast Demonstration Access
+              Seeded Demo Accounts
             </div>
 
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoAccess(ROLES.ADMIN)}
-                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-50 text-indigo-950 transition-colors text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-indigo-950">Continue as Admin</div>
-                    <div className="text-[10px] text-indigo-700">Full business & catalog management</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-indigo-600" />
-              </button>
+              {DEMO_ACCOUNTS.map((account) => {
+                const Icon = ROLE_ICONS[account.role];
+                const styles = ROLE_STYLES[account.role];
 
-              <button
-                type="button"
-                onClick={() => handleQuickDemoAccess(ROLES.STAFF)}
-                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 transition-colors text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-md bg-sky-600 text-white flex items-center justify-center shrink-0">
-                    <UserCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">Continue as Staff</div>
-                    <div className="text-[10px] text-slate-500">Quotations, invoices & overdue accounts</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoAccess(ROLES.CUSTOMER)}
-                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 transition-colors text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-md bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">Continue as Customer</div>
-                    <div className="text-[10px] text-slate-500">Self-service proposals, subscriptions & invoices</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
-              </button>
+                return (
+                  <button
+                    key={account.role}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleQuickDemoAccess(account)}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border transition-colors text-left disabled:opacity-60 ${styles.button}`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${styles.icon}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className={`text-xs font-bold ${styles.title}`}>{account.label}</div>
+                        <div className={`text-[10px] ${styles.subtitle}`}>{account.description}</div>
+                      </div>
+                    </div>
+                    <ArrowRight className={`w-4 h-4 ${styles.arrow}`} />
+                  </button>
+                );
+              })}
             </div>
           </div>
 

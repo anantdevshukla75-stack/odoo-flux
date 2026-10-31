@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
-import { Check, X, CheckCircle2 } from 'lucide-react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Check, X, CheckCircle2, Lock } from 'lucide-react';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
-import { authService } from '../../services/authService.js';
+import { resetPassword } from '../../services/authService.js';
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [token, setToken] = useState(searchParams.get('token') || '');
   const [password, setPassword] = useState('');
@@ -15,32 +16,22 @@ export function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Password rules validation (Backend requires min 8 characters)
+  // Password rules validation
   const rules = {
-    length: password.length >= 8,
+    length: password.length > 8,
     hasUpper: /[A-Z]/.test(password),
     hasLower: /[a-z]/.test(password),
     hasSpecial: /[^A-Za-z0-9]/.test(password)
   };
 
-  const isPasswordValid = rules.length;
+  const isPasswordValid = Object.values(rules).every(Boolean);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!token.trim()) {
-      setError('Please provide a valid password reset token.');
-      return;
-    }
-
-    if (password.length < 8) {
-      setError('New password must contain at least 8 characters.');
-      return;
-    }
-
-    if (password.length > 128) {
-      setError('New password must not exceed 128 characters.');
+    if (!isPasswordValid) {
+      setError('Please satisfy all password complexity rules before proceeding.');
       return;
     }
 
@@ -51,17 +42,10 @@ export function ResetPassword() {
 
     setLoading(true);
     try {
-      // Connect to real POST /auth/reset-password (returns HTTP 204 No Content)
-      await authService.resetPassword(token, password);
+      await resetPassword(token, password);
       setSubmitted(true);
     } catch (err) {
-      if (err.status === 400) {
-        setError('The password reset token is invalid or has expired (30-minute validity). Please request a new recovery link.');
-      } else if (err.status === 422) {
-        setError(err.message || 'Validation error: please ensure your password meets security criteria.');
-      } else {
-        setError(err.message || 'Unable to update password. Please try again.');
-      }
+      setError(err?.message || 'Could not reset your password.');
     } finally {
       setLoading(false);
     }
@@ -90,7 +74,7 @@ export function ResetPassword() {
                 Password Successfully Reset
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Your credentials have been updated in the system database. You can now access your dashboard using your new password.
+                Your credentials have been updated. You can now access your dashboard using your new password.
               </p>
               <Link to="/login" className="block pt-2">
                 <Button variant="primary" className="w-full">
@@ -110,8 +94,8 @@ export function ResetPassword() {
                 label="Security Reset Token"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="Enter reset token"
-                helperText="Supplied from administrative reset dispatch"
+                placeholder="Paste reset token"
+                helperText="Pre-filled from reset email link"
                 required
               />
 
@@ -133,26 +117,24 @@ export function ResetPassword() {
                 required
               />
 
-              {/* Password Requirement Checklist */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
-                <div className="text-slate-500 font-semibold mb-1">Password Requirements:</div>
-                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                  <div className={`flex items-center gap-1.5 ${rules.length ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
-                    {rules.length ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5 text-slate-400" />}
-                    <span>Minimum 8 characters</span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 ${rules.hasUpper ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
-                    {rules.hasUpper ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5 text-slate-400" />}
-                    <span>Uppercase letter</span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 ${rules.hasLower ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
-                    {rules.hasLower ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5 text-slate-400" />}
-                    <span>Lowercase letter</span>
-                  </div>
-                  <div className={`flex items-center gap-1.5 ${rules.hasSpecial ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
-                    {rules.hasSpecial ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5 text-slate-400" />}
-                    <span>Special character</span>
-                  </div>
+              {/* Password Requirements */}
+              <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-lg space-y-1.5 text-xs">
+                <div className="font-semibold text-slate-600 mb-1">Complexity Requirements:</div>
+                <div className={`flex items-center gap-1.5 ${rules.length ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                  {rules.length ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>More than 8 characters</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${rules.hasUpper ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                  {rules.hasUpper ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>At least one uppercase letter (A-Z)</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${rules.hasLower ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                  {rules.hasLower ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>At least one lowercase letter (a-z)</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${rules.hasSpecial ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                  {rules.hasSpecial ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>At least one special character</span>
                 </div>
               </div>
 
@@ -160,20 +142,10 @@ export function ResetPassword() {
                 type="submit"
                 variant="primary"
                 loading={loading}
-                disabled={!isPasswordValid}
                 className="w-full py-2.5 mt-2"
               >
                 Update Password
               </Button>
-
-              <div className="pt-2 text-center">
-                <Link
-                  to="/login"
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <span>Return to Sign In</span>
-                </Link>
-              </div>
             </form>
           )}
         </div>
@@ -183,3 +155,4 @@ export function ResetPassword() {
 }
 
 export default ResetPassword;
+
