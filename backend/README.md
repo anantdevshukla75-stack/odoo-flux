@@ -51,6 +51,7 @@ The API listens on <http://127.0.0.1:8000>:
 | `/api/v1/invoices/*` | Invoices generated from subscriptions |
 | `/api/v1/billing/*` | Manual invoice generation |
 | `/api/v1/payments/*` | Payments recorded against invoices |
+| `/api/v1/dashboard/*` | Dashboard summary |
 | `/docs` | Swagger UI |
 | `/redoc` | ReDoc |
 | `/health` | Health check |
@@ -91,7 +92,8 @@ backend/
 │   ├── customers.py    # Customer persistence
 │   ├── subscriptions.py # Subscription persistence, billing math, lifecycle
 │   ├── invoices.py     # Invoice generation and persistence
-│   └── payments.py     # Payment persistence and invoice status updates
+│   ├── payments.py     # Payment persistence and invoice status updates
+│   └── analytics.py    # Dashboard summary aggregates
 ├── routes/
 │   ├── auth.py         # Auth HTTP endpoints
 │   ├── products.py     # Product HTTP endpoints
@@ -101,6 +103,7 @@ backend/
 │   ├── invoices.py     # Invoice HTTP endpoints
 │   ├── billing.py      # Manual invoice generation endpoint
 │   ├── payments.py     # Payment HTTP endpoints
+│   ├── dashboard.py    # Dashboard summary endpoint
 │   └── schemas/
 │       ├── user.py     # Auth request/response models
 │       ├── product.py  # Product request/response models
@@ -108,7 +111,8 @@ backend/
 │       ├── customer.py # Customer response models
 │       ├── subscription.py # Subscription request/response models
 │       ├── invoice.py  # Invoice + billing request/response models
-│       └── payment.py  # Payment request/response models
+│       ├── payment.py  # Payment request/response models
+│       └── dashboard.py # Dashboard summary response model
 └── helpers/
     └── auth/
         ├── jwt.py      # Access/refresh token creation and decoding
