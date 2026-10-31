@@ -1,7 +1,7 @@
 import jwt
 from database.auth import get_user_by_id
 from database.db import get_session
-from database.model import User
+from database.model import User, UserRole
 from fastapi import Depends, HTTPException
 from sqlmodel import Session
 
@@ -42,5 +42,14 @@ def get_current_user(
 def get_current_active_user(current_user: User = Depends(get_current_user)):
     if not current_user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
+
+    return current_user
+
+
+def require_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
     return current_user

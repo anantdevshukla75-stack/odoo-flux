@@ -4,7 +4,7 @@ from config import API_V1_PREFIX, settings
 from database import db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import auth
+from routes import auth, plans, products
 
 
 @asynccontextmanager
@@ -31,6 +31,12 @@ app.add_middleware(
 
 app.include_router(
     auth.router, prefix=f"{API_V1_PREFIX}/auth", tags=["auth"]
+)
+app.include_router(
+    products.router, prefix=f"{API_V1_PREFIX}/products", tags=["products"]
+)
+app.include_router(
+    plans.router, prefix=f"{API_V1_PREFIX}/plans", tags=["plans"]
 )
 
 

@@ -1,7 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from enum import Enum
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Column, Numeric
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class UserRole(str, Enum):
@@ -64,3 +66,93 @@ class PasswordResetToken(SQLModel, table=True):
     expires_at: datetime = Field(nullable=False)
 
     used_at: datetime | None = Field(default=None, nullable=True)
+
+
+class ProductType(str, Enum):
+    SERVICE = "service"
+    GOODS = "goods"
+    SUBSCRIPTION = "subscription"
+
+
+class BillingInterval(str, Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+class Product(SQLModel, table=True):
+    __tablename__ = "products"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    product_type: ProductType = Field(
+        default=ProductType.SERVICE, nullable=False
+    )
+
+    sales_price: Decimal = Field(
+        sa_column=Column(Numeric(12, 2), nullable=False)
+    )
+
+    cost_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    notes: str | None = Field(default=None, nullable=True)
+
+    is_active: bool = Field(default=True, nullable=False)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class Plan(SQLModel, table=True):
+    __tablename__ = "plans"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    description: str | None = Field(default=None, nullable=True)
+
+    billing_interval: BillingInterval = Field(nullable=False)
+
+    billing_interval_count: int = Field(default=1, nullable=False)
+
+    minimum_quantity: int = Field(default=1, nullable=False)
+
+    start_date: date = Field(nullable=False)
+
+    end_date: date | None = Field(default=None, nullable=True)
+
+    auto_close: bool = Field(default=False, nullable=False)
+
+    allow_early_close: bool = Field(default=False, nullable=False)
+
+    allow_pause: bool = Field(default=False, nullable=False)
+
+    allow_renewal: bool = Field(default=False, nullable=False)
+
+    is_active: bool = Field(default=True, nullable=False)
+
+    lines: list["PlanLine"] = Relationship(
+        back_populates="plan", cascade_delete=True
+    )
+
+
+class PlanLine(SQLModel, table=True):
+    __tablename__ = "plan_lines"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    plan_id: int = Field(foreign_key="plans.id", nullable=False, index=True)
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    quantity: int = Field(default=1, nullable=False)
+
+    unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    plan: "Plan" = Relationship(back_populates="lines")
+
