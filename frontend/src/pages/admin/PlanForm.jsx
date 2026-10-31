@@ -6,7 +6,7 @@ import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
 import PlanLineEditor from '../../components/plans/PlanLineEditor.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 
 export function PlanForm() {
   const { planId } = useParams();
@@ -19,7 +19,6 @@ export function PlanForm() {
     billingInterval: 'MONTHLY',
     billingIntervalCount: 1,
     minimumQuantity: 1,
-    basePrice: '',
     startDate: '',
     endDate: '',
     autoClose: false,
@@ -31,11 +30,12 @@ export function PlanForm() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     async function loadPlan() {
       if (isEdit) {
-        const p = await mockDataService.getPlanById(planId);
+        const p = await apiService.getPlanById(planId);
         if (p) {
           setFormData({
             name: p.name,
@@ -43,7 +43,6 @@ export function PlanForm() {
             billingInterval: p.billingInterval,
             billingIntervalCount: p.billingIntervalCount || 1,
             minimumQuantity: p.minimumQuantity || 1,
-            basePrice: p.basePrice,
             startDate: p.startDate || '',
             endDate: p.endDate || '',
             autoClose: Boolean(p.autoClose),
@@ -61,23 +60,27 @@ export function PlanForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
 
     const payload = {
       ...formData,
       billingIntervalCount: parseInt(formData.billingIntervalCount, 10) || 1,
-      minimumQuantity: parseInt(formData.minimumQuantity, 10) || 1,
-      basePrice: parseFloat(formData.basePrice) || 0
+      minimumQuantity: parseInt(formData.minimumQuantity, 10) || 1
     };
 
-    if (isEdit) {
-      await mockDataService.updatePlan(planId, payload);
-    } else {
-      await mockDataService.createPlan(payload);
+    try {
+      if (isEdit) {
+        await apiService.updatePlan(planId, payload);
+      } else {
+        await apiService.createPlan(payload);
+      }
+      navigate('/admin/plans');
+    } catch (err) {
+      setError(err?.message || 'Could not save the subscription plan.');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-    navigate('/admin/plans');
   };
 
   return (
@@ -97,31 +100,25 @@ export function PlanForm() {
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Core Plan Details Card */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
           <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3">
             Plan Information & Billing Cadence
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Plan Name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g. Scale Enterprise Monthly"
-              required
-            />
-
-            <Input
-              label="Recurring Base Price ($)"
-              type="number"
-              step="0.01"
-              value={formData.basePrice}
-              onChange={(e) => setFormData({ ...formData, basePrice: e.target.value })}
-              placeholder="749.00"
-              required
-            />
-          </div>
+          <Input
+            label="Plan Name"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="e.g. Scale Enterprise Monthly"
+            required
+          />
 
           <Input
             label="Plan Description & Terms"
