@@ -48,6 +48,9 @@ The API listens on <http://127.0.0.1:8000>:
 | `/api/v1/plans/*` | Subscription plans and plan lines |
 | `/api/v1/customers/*` | Customer profiles |
 | `/api/v1/subscriptions/*` | Subscriptions and lifecycle actions |
+| `/api/v1/invoices/*` | Invoices generated from subscriptions |
+| `/api/v1/billing/*` | Manual invoice generation |
+| `/api/v1/payments/*` | Payments recorded against invoices |
 | `/docs` | Swagger UI |
 | `/redoc` | ReDoc |
 | `/health` | Health check |
@@ -60,7 +63,7 @@ All application routes are prefixed with `/api/v1`. See [API-Specifications.md](
 uv run python seed.py
 ```
 
-Creates (idempotently) an admin, a staff member, a customer, three demo products, the "Starter Monthly" plan, and an active demo subscription (`SUB-000001`) for the demo customer. The demo password is printed by the script. This is for local development only.
+Creates (idempotently) an admin, a staff member, a customer, three demo products, the "Starter Monthly" plan, an active demo subscription (`SUB-000001`), and a paid demo invoice (`INV-000001`). The demo password is printed by the script. This is for local development only.
 
 ## Reset the database
 
@@ -86,19 +89,26 @@ backend/
 │   ├── products.py     # Product persistence
 │   ├── plans.py        # Plan + plan line persistence
 │   ├── customers.py    # Customer persistence
-│   └── subscriptions.py # Subscription persistence, billing math, lifecycle
+│   ├── subscriptions.py # Subscription persistence, billing math, lifecycle
+│   ├── invoices.py     # Invoice generation and persistence
+│   └── payments.py     # Payment persistence and invoice status updates
 ├── routes/
 │   ├── auth.py         # Auth HTTP endpoints
 │   ├── products.py     # Product HTTP endpoints
 │   ├── plans.py        # Plan HTTP endpoints
 │   ├── customers.py    # Customer HTTP endpoints
 │   ├── subscriptions.py # Subscription HTTP endpoints
+│   ├── invoices.py     # Invoice HTTP endpoints
+│   ├── billing.py      # Manual invoice generation endpoint
+│   ├── payments.py     # Payment HTTP endpoints
 │   └── schemas/
 │       ├── user.py     # Auth request/response models
 │       ├── product.py  # Product request/response models
 │       ├── plan.py     # Plan request/response models
 │       ├── customer.py # Customer response models
-│       └── subscription.py # Subscription request/response models
+│       ├── subscription.py # Subscription request/response models
+│       ├── invoice.py  # Invoice + billing request/response models
+│       └── payment.py  # Payment request/response models
 └── helpers/
     └── auth/
         ├── jwt.py      # Access/refresh token creation and decoding

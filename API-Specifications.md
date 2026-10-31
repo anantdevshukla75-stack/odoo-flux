@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** Authentication, Products, Plans, Customers, and Subscriptions are implemented. Remaining modules will follow the same `/api/v1` prefix.
+> **Implementation status:** Authentication, Products, Plans, Customers, Subscriptions, Invoices, Billing, and Payments are implemented. Remaining modules will follow the same `/api/v1` prefix.
 
 ## Conventions
 
@@ -645,6 +645,225 @@ Allowed status changes:
 
 > `auto_close`, `allow_early_close`, and `allow_renewal` are stored on plans but not enforced yet.
 
+## Invoices
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/invoices` | Bearer | `200` | List invoices |
+| `GET` | `/invoices/{id}` | Owner or Staff/Admin | `200` | Get an invoice |
+| `POST` | `/billing/generate` | Staff/Admin | `200` | Generate invoices from subscriptions |
+
+There is no `POST /invoices`: invoices are always generated from a subscription's lines so the price snapshot is preserved. Customers only ever see their own invoices, even if they pass another `customer_id`.
+
+### Invoice object
+
+`InvoiceResponse`
+
+```json
+{
+  "id": 2,
+  "invoice_number": "INV-000002",
+  "customer_id": 2,
+  "subscription_id": 2,
+  "issue_date": "2026-03-05",
+  "due_date": "2026-03-05",
+  "billing_period_start": "2026-01-31",
+  "billing_period_end": "2026-02-28",
+  "subtotal": "148.00",
+  "discount_amount": "0.00",
+  "tax_amount": "0.00",
+  "total_amount": "148.00",
+  "status": "confirmed",
+  "created_at": "2026-10-31T07:20:37.044Z",
+  "lines": [
+    {
+      "id": 3,
+      "product_id": 1,
+      "description": "Cloud Hosting",
+      "quantity": 1,
+      "unit_price": "49.00",
+      "discount_amount": "0.00",
+      "tax_amount": "0.00",
+      "line_total": "49.00"
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `invoice_number` | string | Generated as `INV-{id:06d}` |
+| `customer_id` | integer | Billed customer |
+| `subscription_id` | integer | Source subscription |
+| `issue_date` | date | Invoice date |
+| `due_date` | date | `issue_date` + subscription `payment_terms_days` |
+| `billing_period_start` | date | First day covered by the invoice |
+| `billing_period_end` | date | Start plus one billing interval |
+| `subtotal` | decimal string | Sum of line subtotals before tax |
+| `discount_amount` | decimal string | Always `0.00` until discounts are implemented |
+| `tax_amount` | decimal string | Sum of line tax amounts |
+| `total_amount` | decimal string | `subtotal - discount_amount + tax_amount` |
+| `status` | enum | `draft` / `confirmed` / `partially_paid` / `paid` / `cancelled` |
+| `lines` | array | Price snapshot, see below |
+
+`InvoiceLine`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Read-only |
+| `product_id` | integer | Product from the subscription line |
+| `description` | string | Product name at generation time |
+| `quantity` | integer | Copied from the subscription line |
+| `unit_price` | decimal string | Copied from the subscription line |
+| `discount_amount` | decimal string | Always `0.00` |
+| `tax_amount` | decimal string | `quantity × unit_price × tax_rate ÷ 100` |
+| `line_total` | decimal string | Subtotal plus tax |
+
+Generated invoices start as `confirmed`, meaning they are immediately billable. The `draft` status is reserved for a future review step; `cancelled` is not reachable yet.
+
+### List invoices
+
+`GET /invoices` · Bearer · `200`
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `customer_id` | integer | — | Filter by customer (ignored for customers, who are always scoped to themselves) |
+| `subscription_id` | integer | — | Filter by subscription |
+| `status` | enum | — | Filter by invoice status |
+| `offset` | integer | `0` | Rows to skip |
+| `limit` | integer | `100` | Page size, 1–500 |
+
+Returns `InvoiceResponse[]`, newest first, with lines included.
+
+### Get invoice
+
+`GET /invoices/{id}` · Bearer · `200`
+
+Customers can only read their own invoices; staff and admin can read any.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Invoice returned |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not the owner and not staff/admin |
+| `404` | Invoice not found |
+
+### Generate invoices
+
+`POST /billing/generate` · Bearer, role `staff` or `admin` · `200`
+
+`BillingGenerate`
+
+```json
+{
+  "subscription_id": 2,
+  "as_of": "2026-03-05"
+}
+```
+
+Both fields are optional. `as_of` defaults to today.
+
+**Single subscription** (`subscription_id` set) — creates one invoice and returns an array containing it.
+
+**Due run** (`subscription_id` omitted) — creates invoices for active subscriptions that either:
+
+- have started and never been invoiced, or
+- have a `next_billing_date` on or before `as_of`.
+
+Returns an array, which may be empty.
+
+Generation rules:
+
+- The first invoice covers `subscription.start_date` → one billing interval later. Later invoices start at `next_billing_date`.
+- `next_billing_date` is advanced to the end of the billed period.
+- `due_date` is `issue_date` + the subscription's `payment_terms_days`.
+- Lines are snapshots of the subscription lines; changing product prices or tax rates later does not alter existing invoices.
+- A subscription must be `active` or `confirmed` to be invoiced.
+- Invoicing the same subscription and billing period twice is rejected.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Invoice(s) generated (possibly `[]`) |
+| `400` | Subscription not billable, has no lines, or has no next billing date |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `404` | Subscription not found |
+| `409` | An invoice already exists for that billing period |
+| `422` | Validation failed |
+
+## Payments
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/payments` | Bearer | `200` | List payments |
+| `POST` | `/payments` | Staff/Admin | `201` | Record a payment |
+
+### Payment object
+
+`PaymentResponse`
+
+```json
+{
+  "id": 2,
+  "invoice_id": 2,
+  "payment_method": "card",
+  "amount": "50.00",
+  "payment_date": "2026-10-31T07:20:52.907244Z",
+  "reference": "TEST-1",
+  "note": "partial payment",
+  "created_at": "2026-10-31T07:20:52.907244Z"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `invoice_id` | integer | Invoice receiving the payment |
+| `payment_method` | enum | `cash` / `bank_transfer` / `card` / `upi` / `other` |
+| `amount` | decimal string | Must be greater than `0` and at most the outstanding balance |
+| `payment_date` | datetime | Defaults to now (UTC) |
+| `reference` | string \| null | Optional external reference |
+| `note` | string \| null | Optional free text |
+
+### List payments
+
+`GET /payments` · Bearer · `200`
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `invoice_id` | integer | — | Filter by invoice |
+| `payment_method` | enum | — | Filter by method |
+| `offset` | integer | `0` | Rows to skip |
+| `limit` | integer | `100` | Page size, 1–500 |
+
+Customers only see payments belonging to their own invoices.
+
+### Record payment
+
+`POST /payments` · Bearer, role `staff` or `admin` · `201`
+
+`PaymentCreate`
+
+```json
+{
+  "invoice_id": 2,
+  "payment_method": "card",
+  "amount": "50.00",
+  "reference": "TEST-1",
+  "note": "partial payment"
+}
+```
+
+`payment_date` is optional and defaults to now. Recording a payment updates the invoice status: `partially_paid` while the paid total is below `total_amount`, and `paid` once it is reached.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Payment recorded, returns the payment |
+| `400` | Invoice does not accept payments in its status, or amount exceeds the balance |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `404` | Invoice not found |
+| `422` | Validation failed (non-positive amount, unknown method, etc.) |
+
 ## JWT
 
 Access token payload:
@@ -687,7 +906,5 @@ The remaining modules from [PRD §9](PRD.md#9-api-endpoints) are not implemented
 
 - Product variants
 - Quotation templates
-- Invoices and billing
-- Payments
 - Taxes and discounts
 - Dashboard summary
