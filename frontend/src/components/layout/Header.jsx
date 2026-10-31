@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu, LogOut, ShieldCheck, UserCheck, User } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { ROLES } from '../../utils/roleHelpers.js';
 
 export function Header({ onToggleMobile }) {

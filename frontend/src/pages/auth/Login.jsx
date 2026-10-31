@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, UserCheck, User, ArrowRight, AlertCircle, Lock, Mail } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { ShieldCheck, UserCheck, User, ArrowRight, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../context/useAuth.js';
 import { ROLES } from '../../utils/roleHelpers.js';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
@@ -10,8 +10,8 @@ export function Login() {
   const { login, switchDemoRole } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('admin@brightloopsoftware.com');
-  const [password, setPassword] = useState('BrightAdmin@2026!');
+  const [email, setEmail] = useState('admin@odooflux.local');
+  const [password, setPassword] = useState('Password123!');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,7 +30,15 @@ export function Login() {
         navigate('/customer/dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Invalid credentials. Please select one of the demonstration roles below.');
+      if (err.status === 401) {
+        setError('Incorrect email or password. Please check your credentials.');
+      } else if (err.status === 403) {
+        setError('Account is inactive. Please contact your system administrator.');
+      } else if (err.status === 422) {
+        setError(err.message || 'Validation error: please supply a valid email and password.');
+      } else {
+        setError(err.message || 'Authentication failed. Please verify your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -65,7 +73,7 @@ export function Login() {
         <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-start gap-3 text-xs text-amber-900">
           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="leading-relaxed">
-            <strong className="font-semibold">Interactive Demonstration Mode:</strong> You can sign in using simulated credentials or choose an instant role preview below.
+            <strong className="font-semibold">Interactive Mode:</strong> Sign in with active backend credentials (<code className="bg-amber-100 px-1 rounded">admin@odooflux.local</code>) or choose an instant role preview below.
           </div>
         </div>
 
@@ -193,4 +201,3 @@ export function Login() {
 }
 
 export default Login;
-

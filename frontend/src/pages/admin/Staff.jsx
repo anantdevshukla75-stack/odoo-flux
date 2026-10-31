@@ -1,42 +1,99 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, ShieldCheck, Mail, UserCheck, ShieldAlert, CheckCircle2, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, ShieldCheck } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
-import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
 import { mockDataService } from '../../services/mockDataService.js';
+import { authService } from '../../services/authService.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function Staff() {
   const [staff, setStaff] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [newStaff, setNewStaff] = useState({
     fullName: '',
     email: '',
+    password: '',
     department: 'Customer Success & Invoicing'
   });
 
-  const loadStaff = async () => {
+  const loadStaff = useCallback(async () => {
     const list = await mockDataService.getStaff();
     setStaff(list);
-  };
+  }, []);
 
   useEffect(() => {
     loadStaff();
-  }, []);
+  }, [loadStaff]);
 
   const handleCreateStaff = async (e) => {
     e.preventDefault();
-    await mockDataService.createStaff(newStaff);
-    setIsModalOpen(false);
-    setNewStaff({
-      fullName: '',
-      email: '',
-      department: 'Customer Success & Invoicing'
-    });
-    loadStaff();
+    setError('');
+
+    if (newStaff.password.length < 8) {
+      setError('Staff password must be at least 8 characters.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Connect to real POST /auth/staff (Admin only, payload: full_name, email, password)
+      let backendId = null;
+      try {
+        const res = await authService.createStaff({
+          full_name: newStaff.fullName.trim(),
+          email: newStaff.email.trim(),
+          password: newStaff.password
+        });
+        backendId = res?.id;
+      } catch (apiErr) {
+        if (apiErr.status === 409) {
+          setError('A user with this email already exists.');
+          setLoading(false);
+          return;
+        } else if (apiErr.status === 403) {
+          setError('Admin privileges required to provision staff accounts.');
+          setLoading(false);
+          return;
+        } else if (apiErr.status === 422) {
+          setError(apiErr.message || 'Validation error: please supply valid email and password format.');
+          setLoading(false);
+          return;
+        }
+        // If API is offline, warn and continue demo record
+        console.warn('[Staff] Live API unreachable, provisioning locally:', apiErr.message);
+      }
+
+      // Add to local state directory (since no GET /auth/staff exists on backend)
+      const createdStaff = {
+        id: backendId ? `staff-${backendId}` : `staff-${Date.now()}`,
+        fullName: newStaff.fullName.trim(),
+        email: newStaff.email.trim(),
+        department: newStaff.department,
+        role: 'Operations Specialist',
+        joinedDate: new Date().toISOString(),
+        isActive: true
+      };
+
+      await mockDataService.createStaff(createdStaff);
+      setStaff((prev) => [createdStaff, ...prev]);
+
+      setIsModalOpen(false);
+      setNewStaff({
+        fullName: '',
+        email: '',
+        password: '',
+        department: 'Customer Success & Invoicing'
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to provision staff member.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleToggleStatus = (id) => {
@@ -99,15 +156,17 @@ export function Staff() {
                   </td>
                   <td className="px-6 py-4 text-xs text-slate-500">{formatDate(member.joinedDate)}</td>
                   <td className="px-6 py-4">
-                    <StatusBadge status={member.isActive ? 'ACTIVE' : 'DEACTIVATED'} />
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${member.isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+                      {member.isActive ? 'Active Clearance' : 'Suspended'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <Button
-                      variant={member.isActive ? 'secondary' : 'primary'}
-                      size="sm"
+                      variant={member.isActive ? 'danger' : 'secondary'}
+                      size="xs"
                       onClick={() => handleToggleStatus(member.id)}
                     >
-                      {member.isActive ? 'Deactivate' : 'Activate'}
+                      {member.isActive ? 'Suspend' : 'Activate'}
                     </Button>
                   </td>
                 </tr>
@@ -120,10 +179,19 @@ export function Staff() {
       {/* Add Staff Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setError('');
+        }}
         title="Provision New Staff Account"
       >
         <form onSubmit={handleCreateStaff} className="space-y-4">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700">
+              {error}
+            </div>
+          )}
+
           <Input
             label="Staff Full Name"
             value={newStaff.fullName}
@@ -141,6 +209,16 @@ export function Staff() {
             required
           />
 
+          <Input
+            label="Initial Account Password"
+            type="password"
+            value={newStaff.password}
+            onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
+            placeholder="Minimum 8 characters"
+            helperText="Staff credentials for platform access (min 8 characters)"
+            required
+          />
+
           <Select
             label="Departmental Scope"
             value={newStaff.department}
@@ -154,11 +232,18 @@ export function Staff() {
           />
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                setIsModalOpen(false);
+                setError('');
+              }}
+            >
               Cancel
             </Button>
-            <Button type="submit" variant="primary">
-              Provision Staff
+            <Button type="submit" variant="primary" loading={loading}>
+              Provision Staff Account
             </Button>
           </div>
         </form>
@@ -168,4 +253,3 @@ export function Staff() {
 }
 
 export default Staff;
-

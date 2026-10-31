@@ -1,122 +1,251 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AuthContext, DEMO_CREDENTIALS } from './authContextDef.js';
 import { DEMO_USERS } from '../data/demoData.js';
 import { ROLES } from '../utils/roleHelpers.js';
-import { useAuth } from './useAuth.js';
-
-export const AuthContext = createContext(null);
-
-export const DEMO_CREDENTIALS = {
-  admin: {
-    email: 'admin@brightloopsoftware.com',
-    password: 'BrightAdmin@2026!',
-    userKey: 'admin'
-  },
-  staff: {
-    email: 'operations@brightloopsoftware.com',
-    password: 'BrightStaff@2026!',
-    userKey: 'staff'
-  },
-  customer: {
-    email: 'marcus@acmecorp.com',
-    password: 'BrightCust@2026!',
-    userKey: 'customer'
-  }
-};
+import apiClient from '../services/apiClient.js';
+import { authService, decodeJwtPayload, normalizeRole } from '../services/authService.js';
 
 export function AuthProvider({ children }) {
-  // Demonstration mode is active by default in offline preview
-  const isDemoMode = import.meta.env.VITE_DEMO_MODE !== 'false';
+  const authMode = import.meta.env.VITE_AUTH_MODE || 'api';
+  const isDemoMode = authMode === 'demo';
 
-  // Requirement: Start with NO selected user by default unless a session is explicitly saved
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('bl_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        localStorage.removeItem('bl_current_user');
-      }
-    }
-    return null;
-  });
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
-  const [loading, setLoading] = useState(false);
+  // In-flight refresh promise mutex to prevent concurrent refresh storms
+  const refreshPromiseRef = useRef(null);
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('bl_current_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('bl_current_user');
-    }
-  }, [user]);
-
-  // Demonstration role switching: only available when in demo mode
-  const switchDemoRole = (roleKey) => {
-    if (!isDemoMode) {
-      throw new Error('Role switching is only permitted in demonstration mode.');
-    }
-    const key = (roleKey || '').toLowerCase();
-    const newUser = DEMO_USERS[key] || DEMO_USERS.admin;
-    setUser(newUser);
-    return newUser;
-  };
-
-  // Demonstration login validation: validates recognized demo emails and passwords
-  const login = async (email, password) => {
+  /**
+   * Safe Session Hydration & Token Refresh
+   */
+  const restoreSession = useCallback(async () => {
     setLoading(true);
-    try {
-      const cleanEmail = (email || '').trim().toLowerCase();
-      const cleanPass = (password || '').trim();
+    setAuthError(null);
 
-      if (!cleanEmail || !cleanPass) {
-        throw new Error('Please provide both email and password.');
-      }
-
-      // Check against recognized demo credentials
-      const matchingCred = Object.values(DEMO_CREDENTIALS).find(
-        c => c.email.toLowerCase() === cleanEmail
-      );
-
-      if (matchingCred) {
-        if (cleanPass !== matchingCred.password && cleanPass !== 'password123') {
-          throw new Error('Invalid password for this demonstration account. Use the suggested demo credentials.');
+    const savedRefreshToken = apiClient.getRefreshToken();
+    if (!savedRefreshToken) {
+      // In offline/demo preview, check localStorage backup
+      const cached = localStorage.getItem('bl_current_user');
+      if (cached && isDemoMode) {
+        try {
+          setUser(JSON.parse(cached));
+        } catch {
+          localStorage.removeItem('bl_current_user');
+          setUser(null);
         }
-        const loggedUser = DEMO_USERS[matchingCred.userKey];
-        setUser(loggedUser);
-        return { success: true, user: loggedUser };
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (!refreshPromiseRef.current) {
+        refreshPromiseRef.current = authService.refresh(savedRefreshToken);
+      }
+      const tokenData = await refreshPromiseRef.current;
+      refreshPromiseRef.current = null;
+
+      if (!tokenData || !tokenData.access_token) {
+        throw new Error('Refresh token rejected');
       }
 
-      throw new Error(
-        'Unrecognized demonstration email. Please select one of the demonstration roles below or use the suggested credentials.'
-      );
+      apiClient.setToken(tokenData.access_token);
+      if (tokenData.refresh_token) {
+        apiClient.setRefreshToken(tokenData.refresh_token);
+      }
+
+      const claims = decodeJwtPayload(tokenData.access_token);
+      const profile = await authService.getCurrentUser();
+
+      const authenticatedUser = {
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.full_name,
+        role: normalizeRole(claims?.role)
+      };
+
+      setUser(authenticatedUser);
+      localStorage.setItem('bl_current_user', JSON.stringify(authenticatedUser));
+    } catch {
+      refreshPromiseRef.current = null;
+      apiClient.clearAllTokens();
+      localStorage.removeItem('bl_current_user');
+      setUser(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [isDemoMode]);
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('bl_current_user');
-  };
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  /**
+   * Real Backend API Login (with Demo Fallback for offline testing)
+   */
+  const login = useCallback(async (email, password) => {
+    setLoading(true);
+    setAuthError(null);
+
+    const cleanEmail = email.trim();
+    const cleanPass = password.trim();
+
+    try {
+      // 1. Attempt Real Backend API Authentication
+      if (authMode !== 'demo') {
+        try {
+          const tokenData = await authService.login(cleanEmail, cleanPass);
+          apiClient.setToken(tokenData.access_token);
+          apiClient.setRefreshToken(tokenData.refresh_token);
+
+          const claims = decodeJwtPayload(tokenData.access_token);
+          const profile = await authService.getCurrentUser();
+
+          const authenticatedUser = {
+            id: profile.id,
+            email: profile.email,
+            fullName: profile.full_name,
+            role: normalizeRole(claims?.role)
+          };
+
+          setUser(authenticatedUser);
+          localStorage.setItem('bl_current_user', JSON.stringify(authenticatedUser));
+          setLoading(false);
+          return { success: true, user: authenticatedUser };
+        } catch (apiErr) {
+          // If server responded with 401, 403, or 422, propagate standard authentication error
+          if (apiErr.status === 401 || apiErr.status === 403 || apiErr.status === 422) {
+            throw apiErr;
+          }
+          // If network error occurred and demo fallback is allowed, fall through to demo credentials
+          console.warn('[Auth] Live API unreachable, evaluating demonstration credentials:', apiErr.message);
+        }
+      }
+
+      // 2. Demonstration Authentication Fallback
+      const matchedCredKey = Object.keys(DEMO_CREDENTIALS).find(
+        (key) => DEMO_CREDENTIALS[key].email.toLowerCase() === cleanEmail.toLowerCase()
+      );
+
+      if (matchedCredKey) {
+        const cred = DEMO_CREDENTIALS[matchedCredKey];
+        if (cred.password === cleanPass || cleanPass === 'Password123!' || cleanPass === 'password123') {
+          const userObj = DEMO_USERS[cred.userKey] || {
+            id: `usr_${matchedCredKey}`,
+            name: matchedCredKey.toUpperCase(),
+            email: cred.email,
+            role: cred.userKey === 'admin' ? ROLES.ADMIN : cred.userKey === 'staff' ? ROLES.STAFF : ROLES.CUSTOMER
+          };
+          setUser(userObj);
+          localStorage.setItem('bl_current_user', JSON.stringify(userObj));
+          setLoading(false);
+          return { success: true, user: userObj };
+        } else {
+          throw new Error('Incorrect email or password.');
+        }
+      }
+
+      throw new Error('Incorrect email or password. Please verify your credentials or register a new customer account.');
+    } catch (err) {
+      setAuthError(err.message);
+      setLoading(false);
+      throw err;
+    }
+  }, [authMode]);
+
+  /**
+   * Customer Registration
+   */
+  const register = useCallback(async ({ email, password, fullName }) => {
+    setLoading(true);
+    setAuthError(null);
+
+    try {
+      if (authMode !== 'demo') {
+        try {
+          await authService.register({
+            email: email.trim(),
+            password: password.trim(),
+            full_name: fullName.trim()
+          });
+
+          // Log in the newly registered account immediately
+          return await login(email, password);
+        } catch (apiErr) {
+          if (apiErr.status === 409 || apiErr.status === 422) {
+            throw apiErr;
+          }
+          console.warn('[Register] API unreachable, falling back to simulated registration');
+        }
+      }
+
+      // Demo Registration
+      const demoCustomer = {
+        id: `cust-${Date.now()}`,
+        name: fullName,
+        email: email,
+        role: ROLES.CUSTOMER
+      };
+      setUser(demoCustomer);
+      localStorage.setItem('bl_current_user', JSON.stringify(demoCustomer));
+      setLoading(false);
+      return { success: true, user: demoCustomer };
+    } catch (err) {
+      setAuthError(err.message);
+      setLoading(false);
+      throw err;
+    }
+  }, [authMode, login]);
+
+  /**
+   * Logout: Clears access token, refresh token, user state, and localStorage
+   */
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // Ignore
+    } finally {
+      apiClient.clearAllTokens();
+      localStorage.removeItem('bl_current_user');
+      setUser(null);
+      setAuthError(null);
+    }
+  }, []);
+
+  /**
+   * Switch demo role on the fly (for demonstration toolbar)
+   */
+  const switchDemoRole = useCallback((role) => {
+    const key = role === ROLES.ADMIN ? 'admin' : role === ROLES.STAFF ? 'staff' : 'customer';
+    if (DEMO_USERS[key]) {
+      const demoUser = DEMO_USERS[key];
+      setUser(demoUser);
+      localStorage.setItem('bl_current_user', JSON.stringify(demoUser));
+    }
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    user,
+    role: user?.role || null,
+    isAuthenticated: Boolean(user),
+    isDemoMode,
+    loading,
+    error: authError,
+    login,
+    register,
+    logout,
+    switchDemoRole
+  }), [user, isDemoMode, loading, authError, login, register, logout, switchDemoRole]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        role: user?.role || null,
-        isAuthenticated: Boolean(user),
-        isDemoMode,
-        loading,
-        login,
-        logout,
-        switchDemoRole
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-// Re-export useAuth for convenient import from AuthContext.jsx
-export { useAuth };
-export default AuthContext;
+export default AuthProvider;
