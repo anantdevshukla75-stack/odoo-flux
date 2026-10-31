@@ -17,7 +17,7 @@ import StatCard from '../../components/common/StatCard.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -28,29 +28,49 @@ export function Dashboard() {
   const [subscriptions, setSubscriptions] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     async function loadData() {
-      const [c, q, s, inv, p] = await Promise.all([
-        mockDataService.getCustomers(),
-        mockDataService.getQuotations(),
-        mockDataService.getSubscriptions(),
-        mockDataService.getInvoices(),
-        mockDataService.getPayments()
-      ]);
-      setCustomers(c);
-      setQuotations(q);
-      setSubscriptions(s);
-      setInvoices(inv);
-      setPayments(p);
+      try {
+        const [dashboardSummary, c, q, s, inv, p] = await Promise.all([
+          apiService.getDashboardSummary(),
+          apiService.getCustomers(),
+          apiService.getQuotations().catch(() => []),
+          apiService.getSubscriptions(),
+          apiService.getInvoices(),
+          apiService.getPayments()
+        ]);
+        setSummary(dashboardSummary);
+        setCustomers(c);
+        setQuotations(q);
+        setSubscriptions(s);
+        setInvoices(inv);
+        setPayments(p);
+      } catch (error) {
+        setLoadError(error?.message || 'Could not load the operations dashboard.');
+      } finally {
+        setLoading(false);
+      }
     }
     loadData();
   }, []);
 
   const pendingQuotes = quotations.filter(q => q.status === 'SENT' || q.status === 'DRAFT');
   const activeSubs = subscriptions.filter(s => s.status === 'ACTIVE');
-  const unpaidInvoices = invoices.filter(i => i.status === 'OPEN' || i.status === 'OVERDUE');
-  const overdueInvoices = invoices.filter(i => i.status === 'OVERDUE');
+  const unpaidInvoices = invoices.filter(i => i.balance > 0 && !['CANCELLED', 'PAID', 'DRAFT'].includes(i.status));
+  const overdueInvoices = invoices.filter(i => i.status === 'OVERDUE' && i.balance > 0);
+
+  if (loading) return <div className="p-6 text-sm text-slate-500">Loading operations dashboard…</div>;
+  if (loadError) {
+    return (
+      <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-800">
+        {loadError}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -106,10 +126,10 @@ export function Dashboard() {
       {/* 6 Operational Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
-          label="Managed Customers"
+          label="Customer Accounts"
           value={customers.length}
           icon={Users}
-          helperText="Assigned accounts"
+          helperText="Customer records"
         />
         <StatCard
           label="Pending Quotes"
@@ -131,17 +151,17 @@ export function Dashboard() {
         />
         <StatCard
           label="Overdue Invoices"
-          value={overdueInvoices.length}
+          value={summary?.overdueInvoices ?? overdueInvoices.length}
           icon={AlertTriangle}
           trend={overdueInvoices.length > 0 ? 'Dunning Active' : 'All clear'}
           trendDirection={overdueInvoices.length > 0 ? 'down' : 'up'}
           helperText="Follow-up needed"
         />
         <StatCard
-          label="Recent Payments"
+          label="Recorded Payments"
           value={payments.length}
           icon={CreditCard}
-          helperText="Settled this week"
+          helperText="Payments on file"
         />
       </div>
 
@@ -154,7 +174,7 @@ export function Dashboard() {
               <AlertTriangle className="w-4 h-4 text-red-600" />
               <div>
                 <h3 className="text-sm font-semibold text-red-950">Overdue Invoices Requiring Outreach</h3>
-                <p className="text-[11px] text-red-700">Send dunning emails or record direct phone payments</p>
+                <p className="text-[11px] text-red-700">Review aged invoices and record account payments</p>
               </div>
             </div>
             <Button

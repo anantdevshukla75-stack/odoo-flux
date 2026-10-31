@@ -4,8 +4,9 @@
  * Adapts the FastAPI responses (snake_case, lowercase enums, thin relations)
  * into the camelCase shapes the existing UI pages were built against.
  *
- * Modules without backend support (quotations, taxes, discounts, staff
- * listing) continue to use mockDataService.
+ * Tax, discount, quotation, template and staff-directory methods use the
+ * frontend contract documented in docs/API_CONTRACT_REMAINING_FRONTEND.md;
+ * the matching backend routes still need to be implemented.
  */
 
 import apiClient from './apiClient.js';
@@ -45,6 +46,20 @@ const rawPlans = () => apiClient.get('/plans');
 const rawSubscriptions = (params) => apiClient.get('/subscriptions', params);
 const rawInvoices = (params) => apiClient.get('/invoices', params);
 const rawPayments = (params) => apiClient.get('/payments', params);
+
+export async function getDashboardSummary(asOf) {
+  const response = await apiClient.get('/dashboard/summary', asOf ? { as_of: asOf } : undefined);
+
+  return {
+    asOf: response.as_of,
+    activeSubscriptions: Number(response.active_subscriptions) || 0,
+    totalInvoiced: toNumber(response.total_invoiced),
+    totalCollected: toNumber(response.total_collected),
+    outstandingAmount: toNumber(response.outstanding_amount),
+    overdueInvoices: Number(response.overdue_invoices) || 0,
+    overdueAmount: toNumber(response.overdue_amount)
+  };
+}
 
 /* -------------------------------------------------------------------------- */
 /* Normalizers                                                                */
@@ -273,6 +288,186 @@ function normalizePayment(payment, invoiceById = new Map()) {
     note: payment.note || '',
     paymentDate: payment.payment_date,
     status: 'COMPLETED'
+  };
+}
+
+function normalizeTax(tax) {
+  return {
+    id: tax.id,
+    name: tax.name,
+    rate: toNumber(tax.rate),
+    calculationType: toUpper(tax.calculation_type || 'EXCLUSIVE'),
+    isDefault: Boolean(tax.is_default),
+    isActive: Boolean(tax.is_active)
+  };
+}
+
+function taxPayload(tax) {
+  return {
+    name: String(tax.name || '').trim(),
+    rate: toNumber(tax.rate),
+    calculation_type: String(tax.calculationType || 'EXCLUSIVE').toLowerCase(),
+    is_default: Boolean(tax.isDefault),
+    is_active: tax.isActive !== false
+  };
+}
+
+function normalizeDiscount(discount) {
+  return {
+    id: discount.id,
+    name: discount.name,
+    code: discount.code,
+    description: discount.description || '',
+    discountType: toUpper(discount.discount_type),
+    value: toNumber(discount.value),
+    minPurchase: toNumber(discount.min_purchase),
+    minQuantity: Number(discount.min_quantity) || 1,
+    startDate: discount.start_date,
+    endDate: discount.end_date,
+    usageLimit: Number(discount.usage_limit) || 0,
+    redemptionsCount: Number(discount.redemptions_count) || 0,
+    applicability: toUpper(discount.applicability || 'ALL'),
+    applicableProducts: (discount.applicable_products || []).map(Number),
+    applicableSubscriptions: (discount.applicable_subscriptions || []).map(Number),
+    isActive: Boolean(discount.is_active)
+  };
+}
+
+function discountPayload(discount) {
+  return {
+    name: String(discount.name || '').trim(),
+    code: String(discount.code || '').trim().toUpperCase(),
+    description: discount.description || null,
+    discount_type: String(discount.discountType || 'PERCENTAGE').toLowerCase(),
+    value: toNumber(discount.value),
+    min_purchase: toNumber(discount.minPurchase),
+    min_quantity: Number(discount.minQuantity) || 1,
+    start_date: discount.startDate,
+    end_date: discount.endDate || null,
+    usage_limit: Number(discount.usageLimit) || null,
+    applicability: String(discount.applicability || 'ALL').toLowerCase(),
+    applicable_products: (discount.applicableProducts || []).map(Number),
+    applicable_subscriptions: (discount.applicableSubscriptions || []).map(Number),
+    is_active: discount.isActive !== false
+  };
+}
+
+function normalizeTemplate(template, { planById = new Map(), productById = new Map() } = {}) {
+  const defaultPlanId = template.default_plan_id ?? template.defaultPlanId;
+  const lines = template.product_lines || template.lines || [];
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description || '',
+    defaultPlanId,
+    defaultPlanName:
+      template.default_plan_name || planById.get(defaultPlanId)?.name || '',
+    validityDays: Number(template.validity_days ?? template.validityDays) || 30,
+    productLines: lines.map((line) => {
+      const productId = line.product_id ?? line.productId;
+      return {
+        id: line.id,
+        productId,
+        productName:
+          line.product_name || line.productName || productById.get(productId)?.name || `Product #${productId}`,
+        quantity: Number(line.quantity) || 1,
+        unitPrice: toNumber(line.unit_price ?? line.unitPrice)
+      };
+    }),
+    createdAt: template.created_at
+  };
+}
+
+function templatePayload(template) {
+  return {
+    name: String(template.name || '').trim(),
+    description: template.description || null,
+    default_plan_id: Number(template.defaultPlanId),
+    validity_days: Number(template.validityDays) || 30,
+    product_lines: (template.productLines || []).map((line) => ({
+      product_id: Number(line.productId),
+      quantity: Number(line.quantity) || 1,
+      unit_price: toNumber(line.unitPrice)
+    }))
+  };
+}
+
+function normalizeQuotation(quotation, { customerById = new Map(), planById = new Map(), productById = new Map() } = {}) {
+  const customer = customerById.get(quotation.customer_id);
+  const plan = planById.get(quotation.plan_id);
+  const lines = quotation.product_lines || quotation.lines || [];
+
+  return {
+    id: quotation.id,
+    quotationNumber: quotation.quotation_number,
+    customerId: quotation.customer_id,
+    customerName:
+      quotation.customer_name || (customer ? pickCustomerName(customer) : ''),
+    customerEmail: quotation.customer_email || customer?.email || '',
+    customerPhone: quotation.customer_phone || customer?.phone || '',
+    planId: quotation.plan_id,
+    planName: quotation.plan_name || plan?.name || '',
+    planInterval: quotation.plan_interval || plan?.billing_interval?.toUpperCase() || '',
+    subscriptionId: quotation.subscription_id ?? null,
+    status: toUpper(quotation.status),
+    subtotal: toNumber(quotation.subtotal),
+    taxAmount: toNumber(quotation.tax_amount),
+    discountAmount: toNumber(quotation.discount_amount),
+    total: toNumber(quotation.total_amount ?? quotation.total),
+    taxId: quotation.tax_id,
+    discountCode: quotation.discount_code || '',
+    paymentTerms: quotation.payment_terms || '',
+    notes: quotation.notes || '',
+    validityDays: Number(quotation.validity_days) || null,
+    validUntil: quotation.valid_until,
+    createdAt: quotation.created_at,
+    productLines: lines.map((line) => {
+      const productId = line.product_id ?? line.productId;
+      return {
+        id: line.id,
+        productId,
+        productName:
+          line.product_name || line.productName || line.description || productById.get(productId)?.name || `Product #${productId}`,
+        quantity: Number(line.quantity) || 1,
+        unitPrice: toNumber(line.unit_price ?? line.unitPrice),
+        taxRate: toNumber(line.tax_rate),
+        taxAmount: toNumber(line.tax_amount),
+        discountAmount: toNumber(line.discount_amount),
+        amount: toNumber(line.line_total ?? line.amount)
+      };
+    })
+  };
+}
+
+function quotationPayload(quotation) {
+  return {
+    customer_id: Number(quotation.customerId),
+    plan_id: Number(quotation.planId),
+    status: String(quotation.status || 'DRAFT').toLowerCase(),
+    valid_until: quotation.validUntil,
+    payment_terms: quotation.paymentTerms || null,
+    notes: quotation.notes || null,
+    tax_id: quotation.taxId ? Number(quotation.taxId) : null,
+    discount_code: quotation.discountCode || null,
+    product_lines: (quotation.productLines || []).map((line) => ({
+      product_id: Number(line.productId),
+      description: line.productName || '',
+      quantity: Number(line.quantity) || 1,
+      unit_price: toNumber(line.unitPrice)
+    }))
+  };
+}
+
+async function quotationLookups() {
+  const [customers, plans, products] = await Promise.all([
+    rawCustomers().catch(() => []),
+    rawPlans(),
+    rawProducts()
+  ]);
+  return {
+    customerById: indexById(customers),
+    planById: indexById(plans),
+    productById: indexById(products)
   };
 }
 
@@ -511,13 +706,14 @@ export async function getCustomerById(id) {
 }
 
 export async function getCustomerDetails(id) {
-  const [customer, rawSubs, rawInvoices_, payments, plans, allCustomers] = await Promise.all([
+  const [customer, rawSubs, rawInvoices_, payments, plans, allCustomers, quotations] = await Promise.all([
     getCustomerById(id),
     rawSubscriptions({ customer_id: id }),
     rawInvoices({ customer_id: id }),
     rawPayments(),
     rawPlans(),
-    rawCustomers()
+    rawCustomers(),
+    getQuotations({ customerId: id }).catch(() => [])
   ]);
 
   const planById = indexById(plans);
@@ -548,7 +744,7 @@ export async function getCustomerDetails(id) {
     customer,
     subscriptions,
     invoices,
-    quotations: [],
+    quotations,
     payments: normalizedPayments,
     outstandingBalance,
     totalPayments
@@ -661,7 +857,195 @@ export async function togglePlanStatus(id) {
   return getPlanById(id);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Taxes and discounts                                                        */
+/* -------------------------------------------------------------------------- */
+
+export async function getTaxes() {
+  return (await apiClient.get('/taxes')).map(normalizeTax);
+}
+
+export async function getTaxById(id) {
+  return normalizeTax(await apiClient.get(`/taxes/${id}`));
+}
+
+export async function createTax(data) {
+  return normalizeTax(await apiClient.post('/taxes', taxPayload(data)));
+}
+
+export async function updateTax(id, data) {
+  return normalizeTax(await apiClient.patch(`/taxes/${id}`, taxPayload(data)));
+}
+
+export async function toggleTaxStatus(id) {
+  const current = await apiClient.get(`/taxes/${id}`);
+  return normalizeTax(
+    await apiClient.patch(`/taxes/${id}`, { is_active: !current.is_active })
+  );
+}
+
+export async function getDiscounts() {
+  return (await apiClient.get('/discounts')).map(normalizeDiscount);
+}
+
+export async function getDiscountById(id) {
+  return normalizeDiscount(await apiClient.get(`/discounts/${id}`));
+}
+
+export async function createDiscount(data) {
+  return normalizeDiscount(await apiClient.post('/discounts', discountPayload(data)));
+}
+
+export async function updateDiscount(id, data) {
+  return normalizeDiscount(await apiClient.patch(`/discounts/${id}`, discountPayload(data)));
+}
+
+export async function toggleDiscountStatus(id) {
+  const current = await apiClient.get(`/discounts/${id}`);
+  return normalizeDiscount(
+    await apiClient.patch(`/discounts/${id}`, { is_active: !current.is_active })
+  );
+}
+
+export async function deleteDiscount(id) {
+  await apiClient.delete(`/discounts/${id}`);
+  return true;
+}
+
+export async function checkDiscountEligibility(discount, params = {}) {
+  const result = await apiClient.post('/discounts/eligibility', {
+    code: discount.code,
+    purchase_amount: toNumber(params.purchaseAmount),
+    quantity: Number(params.quantity) || 1,
+    product_id: params.productId ? Number(params.productId) : null,
+    plan_id: params.planId ? Number(params.planId) : null
+  });
+
+  return {
+    eligible: Boolean(result.eligible),
+    message: result.message || '',
+    savings: toNumber(result.savings),
+    finalTotal: toNumber(result.final_total)
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Quotation templates and quotations                                         */
+/* -------------------------------------------------------------------------- */
+
+export async function getQuotationTemplates() {
+  const [templates, plans, products] = await Promise.all([
+    apiClient.get('/quotation-templates'),
+    rawPlans(),
+    rawProducts()
+  ]);
+  return templates.map((template) =>
+    normalizeTemplate(template, {
+      planById: indexById(plans),
+      productById: indexById(products)
+    })
+  );
+}
+
+export async function getQuotationTemplateById(id) {
+  const [template, plans, products] = await Promise.all([
+    apiClient.get(`/quotation-templates/${id}`),
+    rawPlans(),
+    rawProducts()
+  ]);
+  return normalizeTemplate(template, {
+    planById: indexById(plans),
+    productById: indexById(products)
+  });
+}
+
+export async function createQuotationTemplate(data) {
+  const created = await apiClient.post('/quotation-templates', templatePayload(data));
+  return getQuotationTemplateById(created.id);
+}
+
+export async function updateQuotationTemplate(id, data) {
+  await apiClient.patch(`/quotation-templates/${id}`, templatePayload(data));
+  return getQuotationTemplateById(id);
+}
+
+export async function deleteQuotationTemplate(id) {
+  await apiClient.delete(`/quotation-templates/${id}`);
+  return true;
+}
+
+export async function getQuotations(filters = {}) {
+  const params = {};
+  if (filters.customerId !== undefined && filters.customerId !== null) {
+    params.customer_id = filters.customerId;
+  }
+  if (filters.status) params.status = String(filters.status).toLowerCase();
+  const [quotations, lookups] = await Promise.all([
+    apiClient.get('/quotations', params),
+    quotationLookups()
+  ]);
+  return quotations.map((quotation) => normalizeQuotation(quotation, lookups));
+}
+
+export async function getQuotationById(id) {
+  const [quotation, lookups] = await Promise.all([
+    apiClient.get(`/quotations/${id}`),
+    quotationLookups()
+  ]);
+  return normalizeQuotation(quotation, lookups);
+}
+
+export async function createQuotation(data) {
+  const created = await apiClient.post('/quotations', quotationPayload(data));
+  return getQuotationById(created.id);
+}
+
+export async function updateQuotationStatus(id, status) {
+  const updated = await apiClient.patch(`/quotations/${id}`, {
+    status: String(status).toLowerCase()
+  });
+  const lookups = await quotationLookups();
+  return normalizeQuotation(updated, lookups);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Staff directory                                                            */
+/* -------------------------------------------------------------------------- */
+
+function normalizeStaff(staff) {
+  return {
+    id: staff.id,
+    fullName: staff.full_name || staff.fullName || '',
+    email: staff.email,
+    role: toUpper(staff.role || 'STAFF'),
+    department: staff.department || '',
+    joinedDate: staff.created_at || staff.joined_date || staff.joinedDate,
+    isActive: staff.is_active ?? staff.isActive ?? true
+  };
+}
+
+export async function getStaff() {
+  return (await apiClient.get('/auth/staff')).map(normalizeStaff);
+}
+
+export async function createStaff(data) {
+  const created = await apiClient.post('/auth/staff', {
+    full_name: String(data.fullName || '').trim(),
+    email: String(data.email || '').trim(),
+    password: data.password
+  });
+  return normalizeStaff(created);
+}
+
+export async function toggleStaffStatus(id) {
+  const current = await apiClient.get(`/auth/staff/${id}`);
+  return normalizeStaff(
+    await apiClient.patch(`/auth/staff/${id}`, { is_active: !current.is_active })
+  );
+}
+
 export const apiService = {
+  getDashboardSummary,
   getCustomers,
   getCustomerById,
   getCustomerDetails,
@@ -678,6 +1062,30 @@ export const apiService = {
   createPlan,
   updatePlan,
   togglePlanStatus,
+  getTaxes,
+  getTaxById,
+  createTax,
+  updateTax,
+  toggleTaxStatus,
+  getDiscounts,
+  getDiscountById,
+  createDiscount,
+  updateDiscount,
+  toggleDiscountStatus,
+  deleteDiscount,
+  checkDiscountEligibility,
+  getQuotationTemplates,
+  getQuotationTemplateById,
+  createQuotationTemplate,
+  updateQuotationTemplate,
+  deleteQuotationTemplate,
+  getQuotations,
+  getQuotationById,
+  createQuotation,
+  updateQuotationStatus,
+  getStaff,
+  createStaff,
+  toggleStaffStatus,
   getSubscriptions,
   getSubscriptionById,
   updateSubscriptionStatus,

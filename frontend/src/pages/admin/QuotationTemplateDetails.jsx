@@ -5,24 +5,30 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import StatCard from '../../components/common/StatCard.jsx';
 import LoadingState from '../../components/common/LoadingState.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function QuotationTemplateDetails() {
   const { templateId } = useParams();
   const navigate = useNavigate();
   const [template, setTemplate] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     async function load() {
-      const tmpl = await mockDataService.getQuotationTemplateById(templateId);
-      setTemplate(tmpl);
+      try {
+        setTemplate(await apiService.getQuotationTemplateById(templateId));
+      } catch (err) {
+        setError(err?.message || 'Could not load this quotation template.');
+      }
     }
     load();
   }, [templateId]);
 
   if (!template) {
-    return <LoadingState message="Loading quotation template blueprint..." />;
+    return error
+      ? <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-800">{error}</div>
+      : <LoadingState message="Loading quotation template blueprint..." />;
   }
 
   const bundledTotal = template.productLines?.reduce(

@@ -10,16 +10,10 @@ import {
   CreditCard,
   Plus,
   ArrowUpRight,
-  TrendingUp,
   Clock,
   Calendar
 } from 'lucide-react';
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   PieChart,
@@ -31,56 +25,82 @@ import StatCard from '../../components/common/StatCard.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
-const SUBSCRIPTION_STATUS_DATA = [
-  { name: 'Active', value: 24, color: '#10B981' },
-  { name: 'Paused', value: 4, color: '#0ea5e9' },
-  { name: 'Closed', value: 2, color: '#94a3b8' }
-];
+const SUBSCRIPTION_STATUS_COLORS = {
+  ACTIVE: '#10B981',
+  CONFIRMED: '#6366F1',
+  PAUSED: '#0ea5e9',
+  DRAFT: '#f59e0b',
+  QUOTATION: '#8b5cf6',
+  CLOSED: '#94a3b8'
+};
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const [metrics, setMetrics] = useState(null);
+  const [summary, setSummary] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [quotations, setQuotations] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [chartPeriod, setChartPeriod] = useState('6M');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     async function loadData() {
-      const [m, c, s, inv, q, p] = await Promise.all([
-        mockDataService.getMetrics(),
-        mockDataService.getCustomers(),
-        mockDataService.getSubscriptions(),
-        mockDataService.getInvoices(),
-        mockDataService.getQuotations(),
-        mockDataService.getPayments()
-      ]);
+      try {
+        const [dashboardSummary, c, s, inv, q, p] = await Promise.all([
+          apiService.getDashboardSummary(),
+          apiService.getCustomers(),
+          apiService.getSubscriptions(),
+          apiService.getInvoices(),
+          apiService.getQuotations().catch(() => []),
+          apiService.getPayments()
+        ]);
 
-      setMetrics(m);
-      setCustomers(c);
-      setSubscriptions(s);
-      setInvoices(inv);
-      setQuotations(q);
-      setPayments(p);
+        setSummary(dashboardSummary);
+        setCustomers(c);
+        setSubscriptions(s);
+        setInvoices(inv);
+        setQuotations(q);
+        setPayments(p);
+      } catch (error) {
+        setLoadError(error?.message || 'Could not load dashboard data.');
+      } finally {
+        setLoading(false);
+      }
     }
     loadData();
   }, []);
 
-  if (!metrics) return null;
+  if (loading) return <div className="p-6 text-sm text-slate-500">Loading dashboard…</div>;
+  if (loadError) {
+    return (
+      <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-800">
+        {loadError}
+      </div>
+    );
+  }
 
-  // Derive summary metrics from data
-  const totalOutstanding = invoices.reduce((acc, i) => acc + (Number(i.balance) || 0), 0);
-  const overdueList = invoices.filter(i => i.status === 'OVERDUE');
-  const activeSubs = subscriptions.filter(s => s.status === 'ACTIVE');
+  const overdueList = invoices.filter((invoice) => invoice.status === 'OVERDUE' && invoice.balance > 0);
+  const subscriptionStatusData = Object.entries(
+    subscriptions.reduce((counts, subscription) => {
+      counts[subscription.status] = (counts[subscription.status] || 0) + 1;
+      return counts;
+    }, {})
+  ).map(([status, value]) => ({
+    name: status.charAt(0) + status.slice(1).toLowerCase(),
+    value,
+    color: SUBSCRIPTION_STATUS_COLORS[status] || '#64748b'
+  }));
 
-  // Upcoming billing (next 30 days)
-  const upcomingBilling = subscriptions.slice(0, 4);
+  const upcomingBilling = subscriptions
+    .filter((subscription) => subscription.status === 'ACTIVE' && subscription.nextBillingDate)
+    .sort((a, b) => new Date(a.nextBillingDate) - new Date(b.nextBillingDate))
+    .slice(0, 4);
 
   return (
     <div className="space-y-6">
@@ -108,160 +128,103 @@ export function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           label="Active Subscriptions"
-          value={activeSubs.length || metrics.activeSubscriptions}
+          value={summary.activeSubscriptions}
           icon={RefreshCw}
-          trend="+8.4%"
-          trendDirection="up"
-          helperText="healthy retention"
+          helperText="Current active contracts"
         />
         <StatCard
           label="Revenue Collected"
-          value={formatCurrency(metrics.revenueTotal)}
+          value={formatCurrency(summary.totalCollected)}
           icon={DollarSign}
-          trend="+14.2%"
-          trendDirection="up"
-          helperText="vs last period"
+          helperText="Payments recorded"
         />
         <StatCard
           label="Outstanding Amount"
-          value={formatCurrency(totalOutstanding)}
+          value={formatCurrency(summary.outstandingAmount)}
           icon={Clock}
-          helperText="Receivables pending"
+          helperText="Unpaid billable invoices"
         />
         <StatCard
           label="Overdue Invoices"
-          value={overdueList.length}
+          value={summary.overdueInvoices}
           icon={AlertTriangle}
-          trend={overdueList.length > 0 ? `${overdueList.length} critical` : 'All clear'}
-          trendDirection={overdueList.length > 0 ? 'down' : 'up'}
-          helperText="Immediate action"
+          helperText={`${formatCurrency(summary.overdueAmount)} overdue`}
         />
         <StatCard
           label="Total Customers"
           value={customers.length}
           icon={Users}
-          trend="+2 new"
-          trendDirection="up"
-          helperText="Enterprise accounts"
+          helperText="Customer accounts"
         />
         <StatCard
           label="Total Invoices"
           value={invoices.length}
           icon={Receipt}
-          helperText="Issued billing cycles"
+          helperText="Invoices on file"
         />
       </div>
 
-      {/* 2. Charts Section: Revenue Area Chart + Subscription Donut Chart */}
+      {/* Billing totals and live subscription distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue Trend Chart */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">
-                Monthly Recurring Revenue Trajectory
-              </h3>
-              <p className="text-xs text-slate-500">
-                Historical monthly cash collections and compounded MRR baseline
-              </p>
-            </div>
-            {/* Date / Period Filter */}
-            <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-xs">
-              {['6M', 'YTD', '1Y'].map((period) => (
-                <button
-                  key={period}
-                  type="button"
-                  onClick={() => setChartPeriod(period)}
-                  className={`px-2.5 py-1 font-medium rounded-md transition-colors ${
-                    chartPeriod === period
-                      ? 'bg-white text-indigo-600 font-semibold shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {period}
-                </button>
-              ))}
-            </div>
+          <div className="mb-5">
+            <h3 className="text-sm font-semibold text-slate-900">Billing Summary</h3>
+            <p className="text-xs text-slate-500">Backend totals as of {formatDate(summary.asOf)}</p>
           </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={metrics.monthlyRevenueChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="areaRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} tickLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v/1000}k`} />
-                <Tooltip
-                  formatter={(v, name) => [formatCurrency(v), name === 'mrr' ? 'MRR' : 'Revenue']}
-                  contentStyle={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-                />
-                <Area type="monotone" dataKey="revenue" name="Total Revenue" stroke="#4F46E5" strokeWidth={2.5} fillOpacity={1} fill="url(#areaRevenue)" />
-                <Area type="monotone" dataKey="mrr" name="MRR Base" stroke="#06B6D4" strokeWidth={2} strokeDasharray="4 4" fill="none" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-lg bg-slate-50 p-4">
+              <div className="text-xs text-slate-500">Total Invoiced</div>
+              <div className="mt-1 text-xl font-bold text-slate-900">{formatCurrency(summary.totalInvoiced)}</div>
+            </div>
+            <div className="rounded-lg bg-emerald-50 p-4">
+              <div className="text-xs text-emerald-700">Total Collected</div>
+              <div className="mt-1 text-xl font-bold text-emerald-800">{formatCurrency(summary.totalCollected)}</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-4">
+              <div className="text-xs text-amber-700">Outstanding</div>
+              <div className="mt-1 text-xl font-bold text-amber-800">{formatCurrency(summary.outstandingAmount)}</div>
+            </div>
+            <div className="rounded-lg bg-rose-50 p-4">
+              <div className="text-xs text-rose-700">Overdue ({summary.overdueInvoices} invoices)</div>
+              <div className="mt-1 text-xl font-bold text-rose-800">{formatCurrency(summary.overdueAmount)}</div>
+            </div>
           </div>
         </div>
 
-        {/* Subscription Distribution Donut Chart */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">
-              Subscription Status Distribution
-            </h3>
-            <p className="text-xs text-slate-500">
-              Active, paused, and closed customer contracts
-            </p>
+            <h3 className="text-sm font-semibold text-slate-900">Subscription Status Distribution</h3>
+            <p className="text-xs text-slate-500">Current contracts from the subscription API</p>
           </div>
-
-          <div className="h-52 w-full my-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={SUBSCRIPTION_STATUS_DATA}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {SUBSCRIPTION_STATUS_DATA.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(val, name) => [`${val} contracts`, name]}
-                  contentStyle={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  iconType="circle"
-                  iconSize={8}
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="pt-3 border-t border-slate-100 grid grid-cols-3 text-center text-xs">
-            <div>
-              <div className="text-slate-400">Active</div>
-              <div className="font-bold text-emerald-600 text-sm">24</div>
-            </div>
-            <div>
-              <div className="text-slate-400">Paused</div>
-              <div className="font-bold text-sky-600 text-sm">4</div>
-            </div>
-            <div>
-              <div className="text-slate-400">Closed</div>
-              <div className="font-bold text-slate-500 text-sm">2</div>
-            </div>
-          </div>
+          {subscriptionStatusData.length > 0 ? (
+            <>
+              <div className="h-52 w-full my-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={subscriptionStatusData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={4} dataKey="value">
+                      {subscriptionStatusData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value, name) => [`${value} contracts`, name]} />
+                    <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="pt-3 border-t border-slate-100 grid grid-cols-3 text-center text-xs">
+                {['ACTIVE', 'PAUSED', 'CLOSED'].map((status) => (
+                  <div key={status}>
+                    <div className="text-slate-400">{status.charAt(0) + status.slice(1).toLowerCase()}</div>
+                    <div className="font-bold text-slate-700 text-sm">
+                      {subscriptions.filter((subscription) => subscription.status === status).length}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="py-12 text-center text-xs text-slate-400">No subscriptions to display.</div>
+          )}
         </div>
       </div>
 

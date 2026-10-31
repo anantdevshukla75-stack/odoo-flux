@@ -5,32 +5,32 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import { useAuth } from '../../context/useAuth.js';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function Quotations({ basePath = '/admin/quotations' }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, user } = useAuth();
+  const { role } = useAuth();
 
   const [quotations, setQuotations] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadError, setLoadError] = useState('');
   const pageSize = 8;
 
   const isCustomer = role === 'CUSTOMER' || location.pathname.startsWith('/customer');
 
   const loadQuotations = useCallback(async () => {
-    const list = await mockDataService.getQuotations();
-    if (isCustomer) {
-      const custId = user?.customerId || user?.id || 'cust-001';
-      setQuotations(list.filter(q => q.customerId === custId));
-    } else {
-      setQuotations(list);
+    try {
+      setQuotations(await apiService.getQuotations());
+      setLoadError('');
+    } catch (err) {
+      setLoadError(err?.message || 'Could not load quotations from the API.');
     }
-  }, [isCustomer, user]);
+  }, []);
 
   useEffect(() => {
     loadQuotations();
@@ -75,6 +75,12 @@ export function Quotations({ basePath = '/admin/quotations' }) {
         )}
       </PageHeader>
 
+      {loadError && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {loadError}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         {/* Filters Toolbar */}
         <div className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 bg-white">
@@ -106,6 +112,7 @@ export function Quotations({ basePath = '/admin/quotations' }) {
               <option value="SENT">Sent</option>
               <option value="ACCEPTED">Accepted</option>
               <option value="REJECTED">Rejected</option>
+              <option value="EXPIRED">Expired</option>
             </select>
           </div>
 

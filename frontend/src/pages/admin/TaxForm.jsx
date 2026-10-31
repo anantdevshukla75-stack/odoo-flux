@@ -12,6 +12,8 @@ export function TaxForm({ isOpen, onClose, initialData = null, onSave }) {
     isDefault: false,
     isActive: true
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (initialData) {
@@ -33,12 +35,20 @@ export function TaxForm({ isOpen, onClose, initialData = null, onSave }) {
     }
   }, [initialData, isOpen]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave({
-      ...formData,
-      rate: parseFloat(formData.rate) || 0
-    });
+    setError('');
+    setLoading(true);
+    try {
+      await onSave({
+        ...formData,
+        rate: parseFloat(formData.rate) || 0
+      });
+    } catch (err) {
+      setError(err?.message || 'Could not save this tax rule.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -48,6 +58,11 @@ export function TaxForm({ isOpen, onClose, initialData = null, onSave }) {
       title={initialData ? 'Edit Statutory Tax Rule' : 'Create Tax Rule'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+            {error}
+          </div>
+        )}
         <Input
           label="Tax Name / Authority Label"
           value={formData.name}
@@ -105,7 +120,7 @@ export function TaxForm({ isOpen, onClose, initialData = null, onSave }) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" loading={loading}>
             {initialData ? 'Save Changes' : 'Create Tax Rule'}
           </Button>
         </div>
