@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** only the auth module is implemented today. It is mounted under `/api/v1`, and the remaining modules will follow the same prefix.
+> **Implementation status:** Authentication, Products, and Plans are implemented. Remaining modules will follow the same `/api/v1` prefix.
 
 ## Conventions
 
@@ -210,6 +210,218 @@ Always returns `202` to avoid account enumeration. For existing active accounts 
 | `400` | Invalid, expired, or already-used token |
 | `422` | Validation failed |
 
+## Products
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/products` | Bearer | `200` | List products |
+| `POST` | `/products` | Admin | `201` | Create a product |
+| `GET` | `/products/{id}` | Bearer | `200` | Get a product |
+| `PATCH` | `/products/{id}` | Admin | `200` | Update a product |
+
+Reads are available to every authenticated role (customers need the catalog); writes are admin-only. Staff receive `403`.
+
+### List products
+
+`GET /products` · Bearer · `200`
+
+Returns products ordered by `name`.
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `is_active` | boolean | — | Filter by active state |
+| `offset` | integer | `0` | Rows to skip |
+| `limit` | integer | `100` | Page size, 1–500 |
+
+`ProductResponse[]`
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Cloud Hosting",
+    "product_type": "service",
+    "sales_price": "49.00",
+    "cost_price": "12.00",
+    "notes": "Managed hosting with daily backups.",
+    "is_active": true,
+    "created_at": "2026-10-31T06:58:34.728300Z"
+  }
+]
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Primary key |
+| `name` | string | 1–255 characters |
+| `product_type` | enum | `service` / `goods` / `subscription` |
+| `sales_price` | decimal string | ≥ 0 |
+| `cost_price` | decimal string | ≥ 0 |
+| `notes` | string \| null | Optional |
+| `is_active` | boolean | Default `true` |
+| `created_at` | datetime | ISO 8601 UTC |
+
+### Create product
+
+`POST /products` · Bearer, role `admin` · `201`
+
+`ProductCreate`
+
+```json
+{
+  "name": "Cloud Hosting",
+  "product_type": "service",
+  "sales_price": "49.00",
+  "cost_price": "12.00",
+  "notes": "Managed hosting with daily backups.",
+  "is_active": true
+}
+```
+
+`product_type`, `is_active`, and `notes` are optional. `name`, `sales_price`, and `cost_price` are required. Response is `ProductResponse`.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Product created |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not an admin |
+| `422` | Validation failed |
+
+### Update product
+
+`PATCH /products/{id}` · Bearer, role `admin` · `200`
+
+Accepts any subset of the create fields. Omitted fields are left unchanged. `notes` can be cleared with `null`; `null` is rejected for the other fields.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Product updated |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not an admin |
+| `404` | Product not found |
+| `422` | Validation failed |
+
+## Plans
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/plans` | Bearer | `200` | List plans |
+| `POST` | `/plans` | Admin | `201` | Create a plan with lines |
+| `GET` | `/plans/{id}` | Bearer | `200` | Get a plan |
+| `PATCH` | `/plans/{id}` | Admin | `200` | Update a plan |
+
+Reads are available to every authenticated role; writes are admin-only.
+
+### Plan object
+
+`PlanResponse`
+
+```json
+{
+  "id": 1,
+  "name": "Starter Monthly",
+  "description": "Hosting and priority support, billed monthly.",
+  "billing_interval": "monthly",
+  "billing_interval_count": 1,
+  "minimum_quantity": 1,
+  "start_date": "2026-01-01",
+  "end_date": null,
+  "auto_close": false,
+  "allow_early_close": false,
+  "allow_pause": false,
+  "allow_renewal": false,
+  "is_active": true,
+  "lines": [
+    { "id": 1, "product_id": 1, "quantity": 1, "unit_price": "49.00" },
+    { "id": 2, "product_id": 2, "quantity": 1, "unit_price": "99.00" }
+  ]
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | 1–255 characters |
+| `description` | string \| null | Optional |
+| `billing_interval` | enum | `daily` / `weekly` / `monthly` / `yearly` |
+| `billing_interval_count` | integer | ≥ 1, default `1` |
+| `minimum_quantity` | integer | ≥ 1, default `1` |
+| `start_date` | date | `YYYY-MM-DD` |
+| `end_date` | date \| null | Must be on or after `start_date` |
+| `auto_close` | boolean | Default `false` |
+| `allow_early_close` | boolean | Default `false` |
+| `allow_pause` | boolean | Default `false` |
+| `allow_renewal` | boolean | Default `false` |
+| `is_active` | boolean | Default `true` |
+| `lines` | array | Plan lines, see below |
+
+`PlanLine`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Read-only, assigned on create |
+| `product_id` | integer | Must reference an existing product |
+| `quantity` | integer | ≥ 1, default `1` |
+| `unit_price` | decimal string | ≥ 0 |
+
+### List plans
+
+`GET /plans` · Bearer · `200`
+
+Same query parameters as products (`is_active`, `offset`, `limit`). Returns `PlanResponse[]` ordered by `name`, with lines included.
+
+### Create plan
+
+`POST /plans` · Bearer, role `admin` · `201`
+
+`PlanCreate`
+
+```json
+{
+  "name": "Starter Monthly",
+  "description": "Hosting and priority support, billed monthly.",
+  "billing_interval": "monthly",
+  "billing_interval_count": 1,
+  "minimum_quantity": 1,
+  "start_date": "2026-01-01",
+  "end_date": null,
+  "allow_pause": true,
+  "lines": [
+    { "product_id": 1, "quantity": 1, "unit_price": "49.00" },
+    { "product_id": 2, "quantity": 1, "unit_price": "99.00" }
+  ]
+}
+```
+
+Only `name`, `billing_interval`, and `start_date` are required; `lines` defaults to an empty list. Response is `PlanResponse`.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Plan created |
+| `400` | A referenced product does not exist |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not an admin |
+| `422` | Validation failed (including `end_date < start_date`) |
+
+### Update plan
+
+`PATCH /plans/{id}` · Bearer, role `admin` · `200`
+
+Accepts any subset of the create fields. Omitted fields are left unchanged.
+
+- Sending `lines` **replaces the entire set** of plan lines; send `[]` to remove them all.
+- Omitting `lines` leaves the existing lines untouched.
+- `description` and `end_date` can be cleared with `null`; `null` is rejected for the other fields.
+- `start_date`/`end_date` are validated together against the merged result.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Plan updated |
+| `400` | A referenced product does not exist |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not an admin |
+| `404` | Plan not found |
+| `422` | Validation failed (including `end_date < start_date`) |
+
 ## JWT
 
 Access token payload:
@@ -251,7 +463,7 @@ Refresh token payload:
 The remaining modules from [PRD §9](PRD.md#9-api-endpoints) are not implemented yet:
 
 - Customers
-- Products, variants, and plans
+- Product variants
 - Quotation templates
 - Subscriptions
 - Invoices and billing
