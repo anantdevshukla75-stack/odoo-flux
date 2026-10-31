@@ -1,3 +1,7 @@
+import hashlib
+import secrets
+from datetime import UTC, datetime, timedelta
+
 import jwt
 from database import db, model
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -11,9 +15,20 @@ from routes.schemas import user
 
 router = APIRouter()
 
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
+
 
 def _token_claims(db_user: model.User) -> dict:
     return {"sub": str(db_user.id), "role": db_user.role.value}
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _to_utc(value: datetime) -> datetime:
+    # SQLite drops tzinfo on read, so re-attach UTC for comparisons
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 @router.post(
@@ -121,14 +136,86 @@ def logout():
     return Response(status_code=204)
 
 
-@router.post("/forgot-password")
-def forgot_password():
-    return {"route": "forgot-password"}
+@router.post("/forgot-password", status_code=202)
+def forgot_password(
+    data: user.PasswordResetRequest, session: Session = Depends(db.get_session)
+):
+    db_user = session.exec(
+        select(model.User).where(model.User.email == data.email)
+    ).first()
+
+    if db_user and db_user.is_active:
+        # Invalidate any outstanding reset tokens for this user
+        outstanding = session.exec(
+            select(model.PasswordResetToken).where(
+                model.PasswordResetToken.user_id == db_user.id,
+                model.PasswordResetToken.used_at.is_(None),
+            )
+        ).all()
+
+        for token_row in outstanding:
+            session.delete(token_row)
+
+        raw_token = secrets.token_urlsafe(32)
+
+        session.add(
+            model.PasswordResetToken(
+                user_id=db_user.id,
+                token_hash=_hash_token(raw_token),
+                expires_at=datetime.now(UTC)
+                + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+            )
+        )
+
+        session.commit()
+
+        # Stub: email delivery is not wired up yet, so raw_token is not exposed.
+
+    return Response(status_code=202)
 
 
-@router.post("/reset-password")
-def reset_password():
-    return {"route": "reset-password"}
+@router.post("/reset-password", status_code=204)
+def reset_password(
+    data: user.PasswordReset, session: Session = Depends(db.get_session)
+):
+    token_row = session.exec(
+        select(model.PasswordResetToken).where(
+            model.PasswordResetToken.token_hash == _hash_token(data.token)
+        )
+    ).first()
+
+    now = datetime.now(UTC)
+
+    if (
+        token_row is None
+        or token_row.used_at is not None
+        or _to_utc(token_row.expires_at) < now
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    db_user = session.get(model.User, token_row.user_id)
+
+    if db_user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    db_user.password_hash = auth.hash_password(data.new_password)
+
+    # Invalidate every outstanding token for this user
+    outstanding = session.exec(
+        select(model.PasswordResetToken).where(
+            model.PasswordResetToken.user_id == db_user.id,
+            model.PasswordResetToken.used_at.is_(None),
+        )
+    ).all()
+
+    for outstanding_row in outstanding:
+        outstanding_row.used_at = now
+        session.add(outstanding_row)
+
+    session.add(db_user)
+    session.commit()
+
+    return Response(status_code=204)
 
 
 @router.post("/staff")
