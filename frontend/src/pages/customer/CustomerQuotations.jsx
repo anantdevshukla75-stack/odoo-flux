@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   FileText,
   Check,
@@ -17,25 +17,33 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import LoadingState from '../../components/common/LoadingState.jsx';
-import { useAuth } from '../../context/useAuth.js';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerQuotations() {
-  const { user } = useAuth();
+  const { quotationId } = useParams();
   const [quotations, setQuotations] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState(null);
+  const [error, setError] = useState('');
 
   const loadQuotations = useCallback(async () => {
     setLoading(true);
-    const customerId = user?.customerId || user?.id || 'cust-001';
-    const list = await mockDataService.getQuotations({ customerId });
-    setQuotations(list);
-    setLoading(false);
-  }, [user]);
+    try {
+      const list = await apiService.getQuotations();
+      setQuotations(list);
+      if (quotationId) {
+        setSelectedQuotation(await apiService.getQuotationById(quotationId));
+      }
+      setError('');
+    } catch (err) {
+      setError(err?.message || 'Could not load your quotations.');
+    } finally {
+      setLoading(false);
+    }
+  }, [quotationId]);
 
   useEffect(() => {
     loadQuotations();
@@ -46,21 +54,21 @@ export function CustomerQuotations() {
   }
 
   const handleDecision = async (quotation, decision) => {
-    const newStatus = decision === 'ACCEPT' ? 'ACCEPTED' : 'CANCELLED';
-    await mockDataService.updateQuotationStatus(quotation.id, newStatus);
-    setSelectedQuotation(null);
-    await loadQuotations();
-
-    if (decision === 'ACCEPT') {
+    try {
+      await apiService.updateQuotationStatus(
+        quotation.id,
+        decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED'
+      );
+      setSelectedQuotation(null);
+      await loadQuotations();
       setFeedback({
-        type: 'success',
-        message: `Proposal ${quotation.quotationNumber} accepted! Subscription created and initial invoice generated in demonstration state.`
+        type: decision === 'ACCEPT' ? 'success' : 'info',
+        message: decision === 'ACCEPT'
+          ? `Proposal ${quotation.quotationNumber} accepted.`
+          : `Proposal ${quotation.quotationNumber} declined.`
       });
-    } else {
-      setFeedback({
-        type: 'info',
-        message: `Proposal ${quotation.quotationNumber} declined in demonstration state.`
-      });
+    } catch (err) {
+      setError(err?.message || 'Could not update this proposal.');
     }
     setTimeout(() => setFeedback(null), 5000);
   };
@@ -90,12 +98,18 @@ export function CustomerQuotations() {
         </div>
       )}
 
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
+
       {/* Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Total Proposals</div>
           <div className="text-2xl font-bold text-slate-900 mt-1">{quotations.length}</div>
-          <div className="text-xs text-slate-500 mt-1">Issued for Acme Technologies</div>
+            <div className="text-xs text-slate-500 mt-1">Issued for your account</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -107,11 +121,11 @@ export function CustomerQuotations() {
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Active Agreements</div>
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Accepted Proposals</div>
           <div className="text-2xl font-bold text-emerald-600 mt-1">
             {quotations.filter(q => q.status === 'ACCEPTED').length}
           </div>
-          <div className="text-xs text-emerald-700 mt-1">Converted to active subscription</div>
+          <div className="text-xs text-emerald-700 mt-1">Accepted by your account</div>
         </div>
       </div>
 
@@ -245,9 +259,7 @@ export function CustomerQuotations() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(selectedQuotation.productLines || [
-                      { id: '1', productName: selectedQuotation.planName, variantName: 'Enterprise Access', quantity: 1, unitPrice: selectedQuotation.subtotal }
-                    ]).map((line, idx) => (
+                    {(selectedQuotation.productLines || []).map((line, idx) => (
                       <tr key={idx}>
                         <td className="p-2">
                           <div className="font-semibold text-slate-900">{line.productName}</div>
@@ -257,6 +269,13 @@ export function CustomerQuotations() {
                         <td className="p-2 text-right font-mono font-semibold">{formatCurrency(line.unitPrice)}</td>
                       </tr>
                     ))}
+                    {(selectedQuotation.productLines || []).length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-slate-400">
+                          No line-item details are available for this proposal.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -275,7 +294,7 @@ export function CustomerQuotations() {
                 </div>
               )}
               <div className="flex justify-between text-slate-600">
-                <span>Tax (GST 18%):</span>
+                  <span>Tax:</span>
                 <span className="font-mono">{formatCurrency(selectedQuotation.taxAmount)}</span>
               </div>
               <div className="flex justify-between font-bold text-slate-900 pt-1.5 border-t border-slate-200 text-sm">
@@ -313,7 +332,7 @@ export function CustomerQuotations() {
               ) : (
                 <div className="text-xs text-slate-400 font-medium">
                   {selectedQuotation.status === 'ACCEPTED'
-                    ? '✓ This agreement is signed and active.'
+                    ? '✓ This proposal has been accepted.'
                     : 'This proposal is no longer actionable.'}
                 </div>
               )}

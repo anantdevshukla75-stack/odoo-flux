@@ -19,7 +19,7 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import StatCard from '../../components/common/StatCard.jsx';
 import LoadingState from '../../components/common/LoadingState.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -30,12 +30,17 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
 
   const [quote, setQuote] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
+  const [error, setError] = useState('');
 
   const isCustomerView = location.pathname.startsWith('/customer');
 
   const loadQuote = useCallback(async () => {
-    const q = await mockDataService.getQuotationById(quotationId);
-    setQuote(q);
+    try {
+      setQuote(await apiService.getQuotationById(quotationId));
+      setError('');
+    } catch (err) {
+      setError(err?.message || 'Could not load this quotation.');
+    }
   }, [quotationId]);
 
   useEffect(() => {
@@ -43,21 +48,28 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
   }, [loadQuote]);
 
   if (!quote) {
-    return <LoadingState message="Loading commercial proposal details..." />;
+    return error
+      ? <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-800">{error}</div>
+      : <LoadingState message="Loading commercial proposal details..." />;
   }
 
   const handleStatusTransition = async (newStatus) => {
     setLoadingAction(true);
-    await mockDataService.updateQuotationStatus(quote.id, newStatus);
-    await loadQuote();
-    setLoadingAction(false);
+    setError('');
+    try {
+      await apiService.updateQuotationStatus(quote.id, newStatus);
+      await loadQuote();
+    } catch (err) {
+      setError(err?.message || 'Could not update quotation status.');
+    } finally {
+      setLoadingAction(false);
+    }
   };
 
   const steps = [
     { key: 'DRAFT', label: 'Draft Created' },
     { key: 'SENT', label: 'Sent to Client' },
-    { key: 'ACCEPTED', label: quote.status === 'REJECTED' ? 'Rejected' : 'Client Accepted' },
-    { key: 'SUBSCRIPTION', label: 'Subscription Active' }
+    { key: 'ACCEPTED', label: quote.status === 'REJECTED' ? 'Rejected' : 'Client Accepted' }
   ];
 
   let currentStepIndex = 0;
@@ -74,6 +86,12 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
         <ArrowLeft className="w-3.5 h-3.5" />
         <span>Back to Quotations</span>
       </button>
+
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
 
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
@@ -135,9 +153,14 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
               variant="secondary"
               size="sm"
               icon={RefreshCw}
-              onClick={() => navigate(isCustomerView ? '/customer/subscriptions' : '/admin/subscriptions')}
+              onClick={() => {
+                const subscriptionsPath = isCustomerView
+                  ? '/customer/subscriptions'
+                  : backPath.startsWith('/staff') ? '/staff/subscriptions' : '/admin/subscriptions';
+                navigate(quote.subscriptionId ? `${subscriptionsPath}/${quote.subscriptionId}` : subscriptionsPath);
+              }}
             >
-              View Active Subscription
+              {quote.subscriptionId ? 'View Subscription' : 'View Subscriptions'}
             </Button>
           )}
         </div>
@@ -189,7 +212,7 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
             </div>
             <div className="flex justify-between py-1 border-b border-slate-50">
               <span className="text-slate-500">Corporate Email:</span>
-              <span className="font-mono text-slate-800">{quote.customerEmail || 'billing@acmecorp.com'}</span>
+              <span className="font-mono text-slate-800">{quote.customerEmail || '—'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-50">
               <span className="text-slate-500">Payment Terms:</span>
@@ -222,7 +245,7 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
               <span className="font-semibold text-slate-900">{formatCurrency(quote.subtotal)}</span>
             </div>
             <div className="flex justify-between py-1">
-              <span className="text-slate-500">Statutory Tax (18%):</span>
+              <span className="text-slate-500">Tax:</span>
               <span className="font-semibold text-slate-900">{formatCurrency(quote.taxAmount)}</span>
             </div>
           </div>
@@ -245,7 +268,6 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
             <thead className="bg-slate-50/80 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-3">Catalog Product</th>
-                <th className="px-6 py-3">Variant Tier</th>
                 <th className="px-6 py-3 text-center">Qty</th>
                 <th className="px-6 py-3">Unit Valuation</th>
                 <th className="px-6 py-3 text-right">Line Valuation</th>
@@ -256,7 +278,6 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
                 quote.productLines.map((l, idx) => (
                   <tr key={idx} className="hover:bg-slate-50/60">
                     <td className="px-6 py-4 font-semibold text-slate-900">{l.productName}</td>
-                    <td className="px-6 py-4 text-xs text-slate-600">{l.variantName || 'Standard'}</td>
                     <td className="px-6 py-4 text-center font-bold text-slate-800">{l.quantity}</td>
                     <td className="px-6 py-4 text-slate-600">{formatCurrency(l.unitPrice)}</td>
                     <td className="px-6 py-4 font-bold text-slate-900 text-right">
@@ -266,8 +287,8 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-xs text-slate-400">
-                    Standard plan configuration with all base entitlements included.
+                  <td colSpan={4} className="p-8 text-center text-xs text-slate-400">
+                    No quotation line-item details are available.
                   </td>
                 </tr>
               )}

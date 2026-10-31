@@ -3,16 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Eye, Edit, FileCode, ArrowRight, Layers, Clock } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 
 export function QuotationTemplates() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     async function load() {
-      const list = await mockDataService.getQuotationTemplates();
+      try {
+        const list = await apiService.getQuotationTemplates();
       setTemplates(list);
+        setError('');
+      } catch (err) {
+        setError(err?.message || 'Could not load quotation templates.');
+      }
     }
     load();
   }, []);
@@ -35,6 +41,12 @@ export function QuotationTemplates() {
           Create Template
         </Button>
       </PageHeader>
+
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {templates.map((tmpl) => (

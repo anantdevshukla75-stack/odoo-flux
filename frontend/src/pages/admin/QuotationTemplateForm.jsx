@@ -5,7 +5,7 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function QuotationTemplateForm() {
@@ -28,39 +28,44 @@ export function QuotationTemplateForm() {
   const [newLineQty, setNewLineQty] = useState(1);
   const [newLinePrice, setNewLinePrice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     async function loadInitial() {
-      const [pl, pr] = await Promise.all([
-        mockDataService.getPlans(),
-        mockDataService.getProducts()
-      ]);
-      setPlans(pl);
-      setProducts(pr);
+      try {
+        const [pl, pr] = await Promise.all([
+          apiService.getPlans(),
+          apiService.getProducts()
+        ]);
+        setPlans(pl);
+        setProducts(pr);
 
-      if (pr.length > 0) {
-        setNewLineProduct(pr[0].id);
-        setNewLinePrice(pr[0].salesPrice);
-      }
-
-      if (isEdit) {
-        const tmpl = await mockDataService.getQuotationTemplateById(templateId);
-        if (tmpl) {
-          setFormData(tmpl);
+        if (pr.length > 0) {
+          setNewLineProduct(String(pr[0].id));
+          setNewLinePrice(pr[0].salesPrice);
         }
-      } else if (pl.length > 0) {
-        setFormData(prev => ({
-          ...prev,
-          defaultPlanId: pl[0].id,
-          defaultPlanName: pl[0].name
-        }));
+
+        if (isEdit) {
+          const template = await apiService.getQuotationTemplateById(templateId);
+          if (template) {
+            setFormData(template);
+          }
+        } else if (pl.length > 0) {
+          setFormData(prev => ({
+            ...prev,
+            defaultPlanId: pl[0].id,
+            defaultPlanName: pl[0].name
+          }));
+        }
+      } catch (err) {
+        setError(err?.message || 'Could not load template form data.');
       }
     }
     loadInitial();
   }, [templateId, isEdit]);
 
   const handlePlanSelect = (pId) => {
-    const found = plans.find(p => p.id === pId);
+    const found = plans.find(p => String(p.id) === String(pId));
     setFormData(prev => ({
       ...prev,
       defaultPlanId: pId,
@@ -70,7 +75,7 @@ export function QuotationTemplateForm() {
 
   const handleProductSelectChange = (pId) => {
     setNewLineProduct(pId);
-    const found = products.find(p => p.id === pId);
+    const found = products.find(p => String(p.id) === String(pId));
     if (found) {
       setNewLinePrice(found.salesPrice);
     }
@@ -78,7 +83,7 @@ export function QuotationTemplateForm() {
 
   const handleAddProductLine = (e) => {
     e.preventDefault();
-    const prod = products.find(p => p.id === newLineProduct);
+    const prod = products.find(p => String(p.id) === String(newLineProduct));
     if (!prod) return;
 
     const qty = parseInt(newLineQty, 10) || 1;
@@ -114,14 +119,19 @@ export function QuotationTemplateForm() {
       validityDays: parseInt(formData.validityDays, 10) || 30
     };
 
-    if (isEdit) {
-      await mockDataService.updateQuotationTemplate(templateId, payload);
-    } else {
-      await mockDataService.createQuotationTemplate(payload);
+    setError('');
+    try {
+      if (isEdit) {
+        await apiService.updateQuotationTemplate(templateId, payload);
+      } else {
+        await apiService.createQuotationTemplate(payload);
+      }
+      navigate('/admin/quotation-templates');
+    } catch (err) {
+      setError(err?.message || 'Could not save the quotation template.');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-    navigate('/admin/quotation-templates');
   };
 
   return (
@@ -141,6 +151,11 @@ export function QuotationTemplateForm() {
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+            {error}
+          </div>
+        )}
         {/* Core Template Settings */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
           <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3">

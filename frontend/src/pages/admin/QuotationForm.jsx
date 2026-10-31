@@ -5,7 +5,7 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function QuotationForm({ basePath = '/admin/quotations' }) {
@@ -38,54 +38,55 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   // Add Product Line local state
   const [lineProductId, setLineProductId] = useState('');
-  const [lineVariantId, setLineVariantId] = useState('');
   const [lineQty, setLineQty] = useState(1);
   const [linePrice, setLinePrice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [taxesList, setTaxesList] = useState([]);
   const [selectedTaxId, setSelectedTaxId] = useState('');
 
   useEffect(() => {
     async function loadData() {
-      const [cList, pList, prodList, tList, dList, taxList] = await Promise.all([
-        mockDataService.getCustomers(),
-        mockDataService.getPlans(),
-        mockDataService.getProducts(),
-        mockDataService.getQuotationTemplates(),
-        mockDataService.getDiscounts(),
-        mockDataService.getTaxes()
-      ]);
+      try {
+        const [cList, pList, prodList, tList, dList, taxList] = await Promise.all([
+          apiService.getCustomers(),
+          apiService.getPlans(),
+          apiService.getProducts(),
+          apiService.getQuotationTemplates(),
+          apiService.getDiscounts(),
+          apiService.getTaxes()
+        ]);
 
-      setCustomers(cList);
-      setPlans(pList);
-      setProducts(prodList);
-      setTemplates(tList);
-      setAvailableDiscounts(dList);
-      setTaxesList(taxList || []);
+        setCustomers(cList);
+        setPlans(pList);
+        setProducts(prodList);
+        setTemplates(tList);
+        setAvailableDiscounts(dList);
+        setTaxesList(taxList || []);
 
       const defTax = (taxList || []).find(t => t.isDefault) || (taxList && taxList[0]);
       if (defTax) {
-        setSelectedTaxId(defTax.id);
+        setSelectedTaxId(String(defTax.id));
       }
 
       if (cList.length > 0) {
-        setSelectedCustomerId(cList[0].id);
+        setSelectedCustomerId(String(cList[0].id));
         setSelectedCustomer(cList[0]);
       }
 
       if (prodList.length > 0) {
-        setLineProductId(prodList[0].id);
+        setLineProductId(String(prodList[0].id));
         setLinePrice(prodList[0].salesPrice);
       }
 
       // If templateId provided, apply template defaults
       if (templateIdParam) {
-        const tmpl = tList.find(t => t.id === templateIdParam);
+        const tmpl = tList.find(t => String(t.id) === String(templateIdParam));
         if (tmpl) {
-          setSelectedTemplateId(tmpl.id);
+          setSelectedTemplateId(String(tmpl.id));
           if (tmpl.defaultPlanId) {
-            setSelectedPlanId(tmpl.defaultPlanId);
-            const planFound = pList.find(p => p.id === tmpl.defaultPlanId);
+            setSelectedPlanId(String(tmpl.defaultPlanId));
+            const planFound = pList.find(p => String(p.id) === String(tmpl.defaultPlanId));
             setSelectedPlan(planFound || null);
           }
           if (tmpl.validityDays) {
@@ -96,27 +97,29 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
               id: `line-${Date.now()}-${Math.random()}`,
               productId: l.productId,
               productName: l.productName,
-              variantName: 'Base License',
               quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              taxRate: 18
+              unitPrice: l.unitPrice
             }));
             setProductLines(mapped);
           }
         }
       } else if (pList.length > 0) {
-        setSelectedPlanId(pList[0].id);
+        setSelectedPlanId(String(pList[0].id));
         setSelectedPlan(pList[0]);
+      }
+      setError('');
+      } catch (err) {
+        setError(err?.message || 'Could not load quotation builder data.');
       }
     }
     loadData();
   }, [templateIdParam]);
 
   const applyTemplate = (tmpl, currentPlans = plans) => {
-    setSelectedTemplateId(tmpl.id);
+    setSelectedTemplateId(String(tmpl.id));
     if (tmpl.defaultPlanId) {
-      setSelectedPlanId(tmpl.defaultPlanId);
-      const planFound = currentPlans.find(p => p.id === tmpl.defaultPlanId);
+      setSelectedPlanId(String(tmpl.defaultPlanId));
+      const planFound = currentPlans.find(p => String(p.id) === String(tmpl.defaultPlanId));
       setSelectedPlan(planFound || null);
     }
     if (tmpl.validityDays) {
@@ -127,10 +130,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
         id: `line-${Date.now()}-${Math.random()}`,
         productId: l.productId,
         productName: l.productName,
-        variantName: 'Base License',
         quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        taxRate: 18
+        unitPrice: l.unitPrice
       }));
       setProductLines(mapped);
     }
@@ -138,19 +139,19 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   const handleCustomerChange = (cId) => {
     setSelectedCustomerId(cId);
-    const found = customers.find(c => c.id === cId);
+    const found = customers.find(c => String(c.id) === String(cId));
     setSelectedCustomer(found || null);
   };
 
   const handlePlanChange = (pId) => {
     setSelectedPlanId(pId);
-    const found = plans.find(p => p.id === pId);
+    const found = plans.find(p => String(p.id) === String(pId));
     setSelectedPlan(found || null);
   };
 
   const handleTemplateChange = (tId) => {
     setSelectedTemplateId(tId);
-    const tmpl = templates.find(t => t.id === tId);
+    const tmpl = templates.find(t => String(t.id) === String(tId));
     if (tmpl) {
       applyTemplate(tmpl);
     }
@@ -158,29 +159,17 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   const handleProductSelect = (pId) => {
     setLineProductId(pId);
-    const prod = products.find(p => p.id === pId);
+    const prod = products.find(p => String(p.id) === String(pId));
     if (prod) {
       setLinePrice(prod.salesPrice);
-      setLineVariantId('');
-    }
-  };
-
-  const handleVariantSelect = (vId) => {
-    setLineVariantId(vId);
-    const prod = products.find(p => p.id === lineProductId);
-    if (prod) {
-      const v = prod.variants?.find(item => item.id === vId);
-      const adj = v ? Number(v.priceAdjustment || 0) : 0;
-      setLinePrice(Number(prod.salesPrice) + adj);
     }
   };
 
   const handleAddLine = (e) => {
     e.preventDefault();
-    const prod = products.find(p => p.id === lineProductId);
+    const prod = products.find(p => String(p.id) === String(lineProductId));
     if (!prod) return;
 
-    const variant = prod.variants?.find(v => v.id === lineVariantId);
     const qty = parseInt(lineQty, 10) || 1;
     const price = parseFloat(linePrice) || 0;
 
@@ -188,10 +177,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       id: `line-${Date.now()}-${Math.random().toString().slice(-4)}`,
       productId: prod.id,
       productName: prod.name,
-      variantName: variant ? variant.name : 'Standard Tier',
       quantity: qty,
-      unitPrice: price,
-      taxRate: 18
+      unitPrice: price
     };
 
     setProductLines([...productLines, newLine]);
@@ -202,7 +189,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
     setProductLines(productLines.filter(l => l.id !== id));
   };
 
-  const handleApplyCoupon = (e) => {
+  const handleApplyCoupon = async (e) => {
     if (e) e.preventDefault();
     if (!couponCode.trim()) {
       setAppliedDiscount(null);
@@ -212,12 +199,30 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
     const found = availableDiscounts.find(
       d => d.code.toUpperCase() === couponCode.trim().toUpperCase() && d.isActive
     );
-    if (found) {
-      setAppliedDiscount(found);
-      setDiscountError('');
-    } else {
+    if (!found) {
       setAppliedDiscount(null);
       setDiscountError('Coupon code not found or inactive.');
+      return;
+    }
+
+    try {
+      const quantity = productLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0) || 1;
+      const result = await apiService.checkDiscountEligibility(found, {
+        purchaseAmount: subtotal,
+        quantity,
+        productId: productLines[0]?.productId,
+        planId: selectedPlanId
+      });
+      if (!result.eligible) {
+        setAppliedDiscount(null);
+        setDiscountError(result.message || 'This discount is not eligible for the current quote.');
+        return;
+      }
+      setAppliedDiscount({ ...found, appliedSavings: result.savings });
+      setDiscountError('');
+    } catch (err) {
+      setAppliedDiscount(null);
+      setDiscountError(err?.message || 'Could not validate this discount code.');
     }
   };
 
@@ -233,12 +238,14 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   // Avoid double-charging base plan when product lines already define proposal items
   const subtotal = productLines.length > 0 ? linesSubtotal : planBase;
 
-  const selectedTax = taxesList.find(t => t.id === selectedTaxId);
-  const taxRate = selectedTax ? Number(selectedTax.rate || 0) : 18;
+  const selectedTax = taxesList.find(t => String(t.id) === String(selectedTaxId));
+  const taxRate = selectedTax ? Number(selectedTax.rate || 0) : 0;
 
   let discountAmount = 0.00;
   if (appliedDiscount) {
-    if (appliedDiscount.discountType === 'PERCENTAGE') {
+    if (appliedDiscount.appliedSavings !== undefined) {
+      discountAmount = Number(appliedDiscount.appliedSavings) || 0;
+    } else if (appliedDiscount.discountType === 'PERCENTAGE') {
       discountAmount = Number((subtotal * (Number(appliedDiscount.value) / 100)).toFixed(2));
     } else {
       discountAmount = Math.min(Number(appliedDiscount.value) || 0, subtotal);
@@ -246,8 +253,11 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   }
 
   const taxableAmount = Math.max(0, subtotal - discountAmount);
-  const taxes = Number((taxableAmount * (taxRate / 100)).toFixed(2));
-  const grandTotal = taxableAmount + taxes;
+  const taxIsInclusive = selectedTax?.calculationType === 'INCLUSIVE';
+  const taxes = taxIsInclusive
+    ? Number((taxableAmount - taxableAmount / (1 + taxRate / 100)).toFixed(2))
+    : Number((taxableAmount * (taxRate / 100)).toFixed(2));
+  const grandTotal = taxIsInclusive ? taxableAmount : taxableAmount + taxes;
 
   const expirationDate = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -259,33 +269,28 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       return;
     }
 
+    setError('');
     setLoading(true);
-    const newQuote = await mockDataService.createQuotation({
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.companyName || selectedCustomer.fullName,
-      customerEmail: selectedCustomer.email,
-      customerPhone: selectedCustomer.phone,
-      planId: selectedPlan.id,
-      planName: selectedPlan.name,
-      planInterval: selectedPlan.billingInterval,
-      productLines,
-      subtotal,
-      taxAmount: taxes,
-      discountAmount: discountAmount,
-      couponCode: appliedDiscount ? appliedDiscount.code : null,
-      total: grandTotal,
-      validityDays,
-      validUntil: expirationDate,
-      paymentTerms,
-      notes,
-      status
-    });
-
-    setLoading(false);
-    navigate(`${basePath}/${newQuote.id}`);
+    try {
+      const quote = await apiService.createQuotation({
+        customerId: selectedCustomer.id,
+        planId: selectedPlan.id,
+        productLines,
+        taxId: selectedTax?.id,
+        discountCode: appliedDiscount?.code,
+        validityDays,
+        validUntil: expirationDate,
+        paymentTerms,
+        notes,
+        status
+      });
+      navigate(`${basePath}/${quote.id}`);
+    } catch (err) {
+      setError(err?.message || 'Could not create the quotation.');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const activeProduct = products.find(p => p.id === lineProductId);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -302,6 +307,12 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
         title="Quotation Commercial Proposal Builder"
         description="Draft prospective subscription terms, configure bundled product lines, and issue proposals for customer sign-off."
       />
+
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-6">
         {/* Template & Customer Selector Card */}
@@ -409,7 +420,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
           </h3>
 
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Select
                 label="Product"
                 value={lineProductId}
@@ -418,20 +429,6 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                   value: p.id,
                   label: `${p.name} (${formatCurrency(p.salesPrice)})`
                 }))}
-                className="mb-0"
-              />
-
-              <Select
-                label="Pricing Variant"
-                value={lineVariantId}
-                onChange={(e) => handleVariantSelect(e.target.value)}
-                options={[
-                  { value: '', label: 'Standard Base' },
-                  ...(activeProduct?.variants || []).map(v => ({
-                    value: v.id,
-                    label: `${v.name} (+${formatCurrency(v.priceAdjustment)})`
-                  }))
-                ]}
                 className="mb-0"
               />
 
@@ -474,7 +471,6 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                 <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase font-semibold">
                   <tr>
                     <th className="px-4 py-2.5">Product</th>
-                    <th className="px-4 py-2.5">Variant</th>
                     <th className="px-4 py-2.5 text-center">Qty</th>
                     <th className="px-4 py-2.5">Unit Price</th>
                     <th className="px-4 py-2.5 text-center">Tax</th>
@@ -486,10 +482,11 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                   {productLines.map((l) => (
                     <tr key={l.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 font-semibold text-slate-900">{l.productName}</td>
-                      <td className="px-4 py-3 text-slate-600">{l.variantName}</td>
                       <td className="px-4 py-3 text-center font-bold">{l.quantity}</td>
                       <td className="px-4 py-3 text-slate-600">{formatCurrency(l.unitPrice)}</td>
-                      <td className="px-4 py-3 text-center text-slate-500 font-mono">18% GST</td>
+                      <td className="px-4 py-3 text-center text-slate-500 font-mono">
+                        {selectedTax ? `${taxRate}%` : '—'}
+                      </td>
                       <td className="px-4 py-3 font-bold text-slate-900 text-right">
                         {formatCurrency(l.quantity * l.unitPrice)}
                       </td>
