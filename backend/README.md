@@ -6,6 +6,9 @@ FastAPI + SQLModel backend for the Odoo Flux subscription and billing MVP.
 
 - Python 3.14 or newer
 - [uv](https://docs.astral.sh/uv/)
+- A PostgreSQL database (SQLite is still supported for local development)
+
+The `psycopg` driver is installed automatically by `uv sync`.
 
 ## Setup
 

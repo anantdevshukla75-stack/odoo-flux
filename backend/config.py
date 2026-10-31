@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int
     FRONTEND_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     FRONTEND_URL: str = "http://localhost:5173"
+    DATABASE_URL_POOLED: str | None = None
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None
