@@ -14,6 +14,8 @@ from sqlmodel import Session, select
 
 from database import db, model
 from database.auth import create_user, get_user_by_email
+from database.invoices import create_invoice
+from database.payments import create_payment
 from database.plans import create_plan
 from database.products import create_product
 from database.subscriptions import create_subscription, transition
@@ -178,6 +180,55 @@ def seed_subscription(session: Session) -> bool:
     return True
 
 
+def seed_invoice(session: Session) -> bool:
+    """Create and pay the first demo invoice if it does not exist."""
+    user = get_user_by_email(session, DEMO_SUBSCRIPTION["customer_email"])
+    db_customer = (
+        session.exec(
+            select(model.Customer).where(model.Customer.user_id == user.id)
+        ).first()
+        if user is not None
+        else None
+    )
+    db_subscription = (
+        session.exec(
+            select(model.Subscription).where(
+                model.Subscription.customer_id == db_customer.id
+            )
+        ).first()
+        if db_customer is not None
+        else None
+    )
+
+    if db_subscription is None:
+        print("invoice skipped (demo subscription missing)")
+        return False
+
+    existing = session.exec(
+        select(model.Invoice).where(
+            model.Invoice.subscription_id == db_subscription.id
+        )
+    ).first()
+
+    if existing is not None:
+        print(f"invoice  {existing.invoice_number:<12} exists")
+        return False
+
+    db_invoice = create_invoice(
+        session, subscription_id=db_subscription.id
+    )
+    create_payment(
+        session,
+        invoice_id=db_invoice.id,
+        payment_method=model.PaymentMethod.BANK_TRANSFER,
+        amount=db_invoice.total_amount,
+        reference="DEMO-PAYMENT",
+    )
+
+    print(f"invoice  {db_invoice.invoice_number:<12} created (paid)")
+    return True
+
+
 def main() -> None:
     db.create_tables()
 
@@ -189,6 +240,7 @@ def main() -> None:
         products = seed_products(session)
         seed_plan(session, products)
         seed_subscription(session)
+        seed_invoice(session)
 
     print(f"\nDemo password for all accounts: {DEMO_PASSWORD}")
 

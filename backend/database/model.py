@@ -284,6 +284,8 @@ class Invoice(SQLModel, table=True):
         back_populates="invoice", cascade_delete=True
     )
 
+    payments: list["Payment"] = Relationship(back_populates="invoice")
+
 
 class InvoiceLine(SQLModel, table=True):
     __tablename__ = "invoice_lines"
@@ -315,4 +317,40 @@ class InvoiceLine(SQLModel, table=True):
     line_total: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
 
     invoice: "Invoice" = Relationship(back_populates="lines")
+
+
+class PaymentMethod(str, Enum):
+    CASH = "cash"
+    BANK_TRANSFER = "bank_transfer"
+    CARD = "card"
+    UPI = "upi"
+    OTHER = "other"
+
+
+class Payment(SQLModel, table=True):
+    __tablename__ = "payments"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    invoice_id: int = Field(
+        foreign_key="invoices.id", nullable=False, index=True
+    )
+
+    payment_method: PaymentMethod = Field(nullable=False)
+
+    amount: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    payment_date: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    reference: str | None = Field(default=None, nullable=True)
+
+    note: str | None = Field(default=None, nullable=True)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    invoice: "Invoice" = Relationship(back_populates="payments")
 

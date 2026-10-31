@@ -9,6 +9,7 @@ from routes import (
     billing,
     customers,
     invoices,
+    payments,
     plans,
     products,
     subscriptions,
@@ -59,6 +60,9 @@ app.include_router(
 )
 app.include_router(
     billing.router, prefix=f"{API_V1_PREFIX}/billing", tags=["billing"]
+)
+app.include_router(
+    payments.router, prefix=f"{API_V1_PREFIX}/payments", tags=["payments"]
 )
 
 
