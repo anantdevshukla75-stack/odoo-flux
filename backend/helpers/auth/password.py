@@ -5,7 +5,7 @@ from pwdlib import PasswordHash
 password_hash = PasswordHash.recommended()
 
 # OAuth2 bearer authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def hash_password(password: str):

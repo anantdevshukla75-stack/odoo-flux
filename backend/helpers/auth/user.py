@@ -1,10 +1,10 @@
 import jwt
-from config import settings
 from database.db import get_session
 from database.model import User
 from fastapi import Depends, HTTPException
 from sqlmodel import Session
 
+from helpers.auth.jwt import ACCESS_TOKEN_TYPE, decode_token
 from helpers.auth.password import oauth2_scheme
 
 
@@ -18,9 +18,7 @@ def get_current_user(
     )
 
     try:
-        payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
-        )
+        payload = decode_token(token, expected_type=ACCESS_TOKEN_TYPE)
 
         user_id = payload.get("sub")
 
@@ -38,3 +36,10 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def get_current_active_user(current_user: User = Depends(get_current_user)):
+    if not current_user.is_active:
+        raise HTTPException(status_code=403, detail="Inactive user")
+
+    return current_user
