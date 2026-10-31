@@ -34,10 +34,14 @@ App: http://localhost:5173.
 
 ## Documentation
 
-- `PRD.md` - product requirements and data model
-- `API-Specifications.md` - API contracts
-- `backend/README.md` - backend setup, routes, migrations, billing job
-- `frontend/docs/API_INTEGRATION_AUDIT.md` - frontend/backend integration status
+- `PRD.md` — product requirements and data model
+- `API-Specifications.md` — API contracts
+- `backend/README.md` — backend setup, routes, migrations, billing job
+- `frontend/docs/API_INTEGRATION_AUDIT.md` — frontend/backend integration status
+
+## Deployment
+
+The repo includes a multi-stage `Dockerfile` that builds the frontend and serves it from FastAPI (same origin, no CORS). Deploy to Render (or any container host) with `DATABASE_URL` pointing at Neon Postgres. Set `FRONTEND_URL` for email links. Run `uv run alembic upgrade head` before starting (the container does this automatically).
 
 ## License
 

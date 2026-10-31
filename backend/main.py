@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from config import API_V1_PREFIX, settings
 from database import db
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from routes import (
     auth,
     billing,
@@ -19,6 +22,8 @@ from routes import (
     subscriptions,
     taxes,
 )
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -91,3 +96,22 @@ app.include_router(
 @app.get("/health")
 def health():
     return {"success": "ok"}
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=FRONTEND_DIST / "assets"),
+        name="frontend-assets",
+    )
+
+    from fastapi import HTTPException
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(request: Request, full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = FRONTEND_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
