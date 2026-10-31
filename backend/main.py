@@ -4,7 +4,7 @@ from config import API_V1_PREFIX, settings
 from database import db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import auth, customers, plans, products
+from routes import auth, customers, plans, products, subscriptions
 
 
 @asynccontextmanager
@@ -40,6 +40,11 @@ app.include_router(
 )
 app.include_router(
     customers.router, prefix=f"{API_V1_PREFIX}/customers", tags=["customers"]
+)
+app.include_router(
+    subscriptions.router,
+    prefix=f"{API_V1_PREFIX}/subscriptions",
+    tags=["subscriptions"],
 )
 
 

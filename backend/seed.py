@@ -16,6 +16,7 @@ from database import db, model
 from database.auth import create_user, get_user_by_email
 from database.plans import create_plan
 from database.products import create_product
+from database.subscriptions import create_subscription, transition
 from helpers.auth import hash_password
 
 DEMO_PASSWORD = "Password123!"
@@ -57,6 +58,11 @@ DEMO_PLAN = {
     "billing_interval_count": 1,
     "minimum_quantity": 1,
     "start_date": date(2026, 1, 1),
+}
+
+DEMO_SUBSCRIPTION = {
+    "customer_email": "customer@odooflux.local",
+    "plan_name": "Starter Monthly",
 }
 
 
@@ -129,6 +135,49 @@ def seed_plan(
     return True
 
 
+def seed_subscription(session: Session) -> bool:
+    """Create and activate the demo subscription if it does not exist."""
+    user = get_user_by_email(session, DEMO_SUBSCRIPTION["customer_email"])
+    db_customer = (
+        session.exec(
+            select(model.Customer).where(model.Customer.user_id == user.id)
+        ).first()
+        if user is not None
+        else None
+    )
+    db_plan = session.exec(
+        select(model.Plan).where(model.Plan.name == DEMO_SUBSCRIPTION["plan_name"])
+    ).first()
+
+    if db_customer is None or db_plan is None:
+        print("subscription skipped (demo customer or plan missing)")
+        return False
+
+    existing = session.exec(
+        select(model.Subscription).where(
+            model.Subscription.customer_id == db_customer.id
+        )
+    ).first()
+
+    if existing is not None:
+        print(f"subscription {existing.subscription_number:<12} exists")
+        return False
+
+    db_subscription = create_subscription(
+        session,
+        customer_id=db_customer.id,
+        plan_id=db_plan.id,
+        start_date=date.today(),
+    )
+    transition(
+        session, db_subscription, model.SubscriptionStatus.CONFIRMED
+    )
+    transition(session, db_subscription, model.SubscriptionStatus.ACTIVE)
+
+    print(f"subscription {db_subscription.subscription_number} created (active)")
+    return True
+
+
 def main() -> None:
     db.create_tables()
 
@@ -139,6 +188,7 @@ def main() -> None:
 
         products = seed_products(session)
         seed_plan(session, products)
+        seed_subscription(session)
 
     print(f"\nDemo password for all accounts: {DEMO_PASSWORD}")
 
