@@ -39,3 +39,26 @@
     background: #94A3B8;
   }
 }
+
+/* Print Invoice Stylesheet */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Hide navigation, chrome, headers, and actions */
+  header,
+  aside,
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Ensure printed card takes full sheet */
+  @page {
+    margin: 1.5cm;
+    size: auto;
+  }
+}

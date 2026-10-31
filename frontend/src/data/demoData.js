@@ -264,21 +264,111 @@ export const DEMO_TAXES = [
 export const DEMO_DISCOUNTS = [
   {
     id: 'disc-001',
+    name: 'Hackathon Growth Incentive',
     code: 'HACKATHON2026',
-    description: 'Hackathon presentation incentive',
+    description: 'Hackathon presentation incentive for new signups',
     discountType: 'PERCENTAGE',
     value: 20.00,
-    isActive: true,
-    redemptionsCount: 12
+    minPurchase: 500.00,
+    minQuantity: 1,
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    usageLimit: 100,
+    redemptionsCount: 14,
+    applicability: 'SUBSCRIPTION_WIDE',
+    applicableProducts: [],
+    applicableSubscriptions: ['plan-001', 'plan-002', 'plan-003'],
+    isActive: true
   },
   {
     id: 'disc-002',
+    name: 'Enterprise Flat Concession',
     code: 'STARTUP500',
-    description: 'First month flat concession',
+    description: 'First month flat concession on enterprise deployments',
     discountType: 'FIXED',
     value: 500.00,
-    isActive: true,
-    redemptionsCount: 4
+    minPurchase: 2000.00,
+    minQuantity: 1,
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    usageLimit: 50,
+    redemptionsCount: 4,
+    applicability: 'SUBSCRIPTION_WIDE',
+    applicableProducts: [],
+    applicableSubscriptions: ['plan-001', 'plan-002'],
+    isActive: true
+  },
+  {
+    id: 'disc-003',
+    name: 'Product Core Special',
+    code: 'COREONLY',
+    description: 'Exclusive 15% discount on Brightloop Platform Core only',
+    discountType: 'PERCENTAGE',
+    value: 15.00,
+    minPurchase: 400.00,
+    minQuantity: 1,
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    usageLimit: 200,
+    redemptionsCount: 22,
+    applicability: 'PRODUCT_SPECIFIC',
+    applicableProducts: ['prod-001'],
+    applicableSubscriptions: [],
+    isActive: true
+  },
+  {
+    id: 'disc-004',
+    name: 'Future Launch Promo',
+    code: 'LAUNCH2027',
+    description: 'Upcoming campaign discount (scheduled for next year)',
+    discountType: 'PERCENTAGE',
+    value: 25.00,
+    minPurchase: 100.00,
+    minQuantity: 1,
+    startDate: '2027-01-01',
+    endDate: '2027-12-31',
+    usageLimit: 50,
+    redemptionsCount: 0,
+    applicability: 'ALL',
+    applicableProducts: [],
+    applicableSubscriptions: [],
+    isActive: true
+  },
+  {
+    id: 'disc-005',
+    name: 'Expired Summer Flash Concession',
+    code: 'FLASH2025',
+    description: 'Special summer discount from previous fiscal period',
+    discountType: 'FIXED',
+    value: 250.00,
+    minPurchase: 500.00,
+    minQuantity: 1,
+    startDate: '2025-06-01',
+    endDate: '2025-08-31',
+    usageLimit: 30,
+    redemptionsCount: 28,
+    applicability: 'ALL',
+    applicableProducts: [],
+    applicableSubscriptions: [],
+    isActive: true
+  },
+  {
+    id: 'disc-006',
+    name: 'Sold Out VIP Voucher',
+    code: 'VIPEXHAUSTED',
+    description: 'Exclusive quota-restricted discount with zero remaining capacity',
+    discountType: 'PERCENTAGE',
+    value: 30.00,
+    minPurchase: 1000.00,
+    minQuantity: 2,
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    usageLimit: 10,
+    redemptionsCount: 10,
+    applicability: 'ALL',
+    applicableProducts: [],
+    applicableSubscriptions: [],
+    isActive: true
   }
 ];
 
@@ -399,12 +489,17 @@ export const DEMO_INVOICES = [
     status: 'PAID',
     subtotal: 749.00,
     taxAmount: 134.82,
+    discountAmount: 0.00,
     totalAmount: 883.82,
     paidAmount: 883.82,
     balance: 0.00,
     issueDate: '2026-10-15',
     dueDate: '2026-10-30',
-    paidAt: '2026-10-18T11:20:00Z'
+    billingPeriod: '15 Oct 2026 - 15 Nov 2026',
+    paidAt: '2026-10-18T11:20:00Z',
+    items: [
+      { id: 'item-1', description: 'Scale Enterprise Monthly Platform Access', quantity: 1, unitPrice: 749.00, taxRate: 18, amount: 749.00 }
+    ]
   },
   {
     id: 'inv-9002',
@@ -415,12 +510,17 @@ export const DEMO_INVOICES = [
     status: 'PAID',
     subtotal: 7490.00,
     taxAmount: 0.00,
+    discountAmount: 0.00,
     totalAmount: 7490.00,
     paidAmount: 7490.00,
     balance: 0.00,
     issueDate: '2026-10-01',
     dueDate: '2026-10-15',
-    paidAt: '2026-10-04T15:45:00Z'
+    billingPeriod: '01 Mar 2026 - 01 Mar 2027',
+    paidAt: '2026-10-04T15:45:00Z',
+    items: [
+      { id: 'item-1', description: 'Scale Enterprise Annual Prepaid License', quantity: 1, unitPrice: 7490.00, taxRate: 0, amount: 7490.00 }
+    ]
   },
   {
     id: 'inv-9003',
@@ -428,15 +528,20 @@ export const DEMO_INVOICES = [
     subscriptionId: 'sub-5001',
     customerId: 'cust-001',
     customerName: 'Acme Technologies Inc.',
-    status: 'OPEN',
+    status: 'CONFIRMED',
     subtotal: 749.00,
     taxAmount: 134.82,
+    discountAmount: 0.00,
     totalAmount: 883.82,
     paidAmount: 0.00,
     balance: 883.82,
     issueDate: '2026-10-28',
     dueDate: '2026-11-12',
-    paidAt: null
+    billingPeriod: '15 Nov 2026 - 15 Dec 2026',
+    paidAt: null,
+    items: [
+      { id: 'item-1', description: 'Scale Enterprise Monthly Subscription Renewal', quantity: 1, unitPrice: 749.00, taxRate: 18, amount: 749.00 }
+    ]
   },
   {
     id: 'inv-9004',
@@ -447,12 +552,80 @@ export const DEMO_INVOICES = [
     status: 'OVERDUE',
     subtotal: 749.00,
     taxAmount: 134.82,
+    discountAmount: 0.00,
     totalAmount: 883.82,
     paidAmount: 0.00,
     balance: 883.82,
     issueDate: '2026-09-20',
     dueDate: '2026-10-05',
-    paidAt: null
+    billingPeriod: '20 Sep 2026 - 20 Oct 2026',
+    paidAt: null,
+    items: [
+      { id: 'item-1', description: 'Scale Enterprise Monthly Service Period', quantity: 1, unitPrice: 749.00, taxRate: 18, amount: 749.00 }
+    ]
+  },
+  {
+    id: 'inv-9005',
+    invoiceNumber: 'INV-2026-0049',
+    subscriptionId: 'sub-5003',
+    customerId: 'cust-002',
+    customerName: 'TechNova Cloud Corp',
+    status: 'PARTIALLY_PAID',
+    subtotal: 2000.00,
+    taxAmount: 360.00,
+    discountAmount: 200.00,
+    totalAmount: 2160.00,
+    paidAmount: 1000.00,
+    balance: 1160.00,
+    issueDate: '2026-10-10',
+    dueDate: '2026-11-10',
+    billingPeriod: '10 Oct 2026 - 10 Nov 2026',
+    paidAt: null,
+    items: [
+      { id: 'item-1', description: 'Enterprise Custom Hybrid Cloud Setup', quantity: 1, unitPrice: 2000.00, taxRate: 18, amount: 2000.00 }
+    ]
+  },
+  {
+    id: 'inv-9006',
+    invoiceNumber: 'INV-2026-0050',
+    subscriptionId: 'sub-5003',
+    customerId: 'cust-002',
+    customerName: 'TechNova Cloud Corp',
+    status: 'DRAFT',
+    subtotal: 499.00,
+    taxAmount: 89.82,
+    discountAmount: 0.00,
+    totalAmount: 588.82,
+    paidAmount: 0.00,
+    balance: 588.82,
+    issueDate: '2026-10-30',
+    dueDate: '2026-11-14',
+    billingPeriod: '01 Nov 2026 - 01 Dec 2026',
+    paidAt: null,
+    items: [
+      { id: 'item-1', description: 'Draft Pro-rated Cloud Migration Provisioning', quantity: 1, unitPrice: 499.00, taxRate: 18, amount: 499.00 }
+    ]
+  },
+  {
+    id: 'inv-9007',
+    invoiceNumber: 'INV-2026-0051',
+    subscriptionId: null,
+    customerId: 'cust-004',
+    customerName: 'Nexus Health Systems',
+    status: 'CANCELLED',
+    subtotal: 1200.00,
+    taxAmount: 216.00,
+    discountAmount: 0.00,
+    totalAmount: 1416.00,
+    paidAmount: 0.00,
+    balance: 0.00,
+    issueDate: '2026-09-01',
+    dueDate: '2026-09-15',
+    billingPeriod: 'N/A - Cancelled Scope',
+    paidAt: null,
+    items: [
+      { id: 'item-1', description: 'Terminated Healthcare Compliance Add-on', quantity: 1, unitPrice: 1200.00, taxRate: 18, amount: 1200.00 }
+    ]
   }
 ];
 
@@ -527,6 +700,20 @@ export const DEMO_METRICS = {
     { name: 'Scale Enterprise Monthly', value: 14, fill: '#4F46E5' },
     { name: 'Scale Enterprise Annual', value: 6, fill: '#06B6D4' },
     { name: 'Starter Growth Plan', value: 4, fill: '#10B981' }
+  ],
+  mrrWaterfall: [
+    { month: 'May', newMrr: 1500, expansionMrr: 400, churnMrr: -700, netAdd: 1200 },
+    { month: 'Jun', newMrr: 1600, expansionMrr: 500, churnMrr: -900, netAdd: 1200 },
+    { month: 'Jul', newMrr: 1800, expansionMrr: 600, churnMrr: -900, netAdd: 1500 },
+    { month: 'Aug', newMrr: 1700, expansionMrr: 700, churnMrr: -1200, netAdd: 1200 },
+    { month: 'Sep', newMrr: 1900, expansionMrr: 800, churnMrr: -1500, netAdd: 1200 },
+    { month: 'Oct', newMrr: 2100, expansionMrr: 950, churnMrr: -1900, netAdd: 1150 }
+  ],
+  arAging: [
+    { bucket: 'Current (0-30 Days)', amount: 883.82, count: 1, percentage: 50, color: '#10B981' },
+    { bucket: 'Past Due (31-60 Days)', amount: 883.82, count: 1, percentage: 50, color: '#F59E0B' },
+    { bucket: 'Delinquent (61-90 Days)', amount: 0.00, count: 0, percentage: 0, color: '#EF4444' },
+    { bucket: 'Default Risk (90+ Days)', amount: 0.00, count: 0, percentage: 0, color: '#991B1B' }
   ]
 };
 

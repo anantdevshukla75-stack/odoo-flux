@@ -17,6 +17,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   const [plans, setPlans] = useState([]);
   const [products, setProducts] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [availableDiscounts, setAvailableDiscounts] = useState([]);
 
   // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -30,6 +31,11 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   const [paymentTerms, setPaymentTerms] = useState('Net 15 Days');
   const [notes, setNotes] = useState('Subject to Brightloop standard software terms of service.');
 
+  // Discount state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [discountError, setDiscountError] = useState('');
+
   // Add Product Line local state
   const [lineProductId, setLineProductId] = useState('');
   const [lineVariantId, setLineVariantId] = useState('');
@@ -39,17 +45,19 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
   useEffect(() => {
     async function loadData() {
-      const [cList, pList, prodList, tList] = await Promise.all([
+      const [cList, pList, prodList, tList, dList] = await Promise.all([
         mockDataService.getCustomers(),
         mockDataService.getPlans(),
         mockDataService.getProducts(),
-        mockDataService.getQuotationTemplates()
+        mockDataService.getQuotationTemplates(),
+        mockDataService.getDiscounts()
       ]);
 
       setCustomers(cList);
       setPlans(pList);
       setProducts(prodList);
       setTemplates(tList);
+      setAvailableDiscounts(dList);
 
       if (cList.length > 0) {
         setSelectedCustomerId(cList[0].id);
@@ -165,13 +173,48 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
     setProductLines(productLines.filter(l => l.id !== id));
   };
 
+  const handleApplyCoupon = (e) => {
+    if (e) e.preventDefault();
+    if (!couponCode.trim()) {
+      setAppliedDiscount(null);
+      setDiscountError('');
+      return;
+    }
+    const found = availableDiscounts.find(
+      d => d.code.toUpperCase() === couponCode.trim().toUpperCase() && d.isActive
+    );
+    if (found) {
+      setAppliedDiscount(found);
+      setDiscountError('');
+    } else {
+      setAppliedDiscount(null);
+      setDiscountError('Coupon code not found or inactive.');
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedDiscount(null);
+    setCouponCode('');
+    setDiscountError('');
+  };
+
   // Financial Calculations
   const planBase = selectedPlan ? Number(selectedPlan.basePrice || 0) : 0;
   const linesSubtotal = productLines.reduce((acc, l) => acc + (l.quantity * l.unitPrice), 0);
   const subtotal = planBase + linesSubtotal;
-  const taxes = Number((subtotal * 0.18).toFixed(2));
-  const discount = 0.00;
-  const grandTotal = subtotal + taxes - discount;
+
+  let discountAmount = 0.00;
+  if (appliedDiscount) {
+    if (appliedDiscount.discountType === 'PERCENTAGE') {
+      discountAmount = Number((subtotal * (Number(appliedDiscount.value) / 100)).toFixed(2));
+    } else {
+      discountAmount = Math.min(Number(appliedDiscount.value) || 0, subtotal);
+    }
+  }
+
+  const taxableAmount = Math.max(0, subtotal - discountAmount);
+  const taxes = Number((taxableAmount * 0.18).toFixed(2));
+  const grandTotal = taxableAmount + taxes;
 
   const expirationDate = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -195,7 +238,8 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       productLines,
       subtotal,
       taxAmount: taxes,
-      discountAmount: discount,
+      discountAmount: discountAmount,
+      couponCode: appliedDiscount ? appliedDiscount.code : null,
       total: grandTotal,
       validityDays,
       validUntil: expirationDate,
@@ -494,10 +538,46 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
                 <span>Jurisdictional Taxes (18%):</span>
                 <span className="font-semibold text-slate-900">{formatCurrency(taxes)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-600">
-                <span>Promotional Concession:</span>
-                <span className="font-semibold text-slate-400">—</span>
-              </div>
+
+              {/* Coupon / Concession row */}
+              {appliedDiscount ? (
+                <div className="flex items-center justify-between text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold">
+                    <span>Coupon ({appliedDiscount.code}):</span>
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="text-emerald-800 underline hover:text-emerald-950 cursor-pointer ml-1"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <span className="font-bold font-mono">-{formatCurrency(discountAmount)}</span>
+                </div>
+              ) : (
+                <div className="pt-2">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="Coupon Code (e.g. WELCOME20)"
+                      className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded-md uppercase font-mono tracking-wider focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      className="px-2.5 py-1 bg-slate-800 text-white text-xs font-medium rounded-md hover:bg-slate-700 cursor-pointer"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  {discountError && (
+                    <div className="text-[11px] text-red-600 mt-1">{discountError}</div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-base font-bold text-slate-900 pt-3 border-t-2 border-slate-100">
                 <span className="text-indigo-950">Grand Total Valuation:</span>
                 <span className="text-indigo-600 font-mono text-lg">{formatCurrency(grandTotal)}</span>

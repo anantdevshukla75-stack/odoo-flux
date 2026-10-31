@@ -9,6 +9,8 @@ const STATUS_STYLES = {
   pending: 'bg-amber-50 text-amber-700 border-amber-200',
   draft: 'bg-amber-50 text-amber-700 border-amber-200',
   sent: 'bg-amber-50 text-amber-700 border-amber-200',
+  partially_paid: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'partially paid': 'bg-indigo-50 text-indigo-700 border-indigo-200',
 
   overdue: 'bg-red-50 text-red-700 border-red-200',
   unpaid: 'bg-red-50 text-red-700 border-red-200',
@@ -34,7 +36,7 @@ export function StatusBadge({ status, className = '' }) {
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border capitalize tracking-wide ${styles} ${className}`.trim()}
     >
-      {status.toLowerCase()}
+      {String(status).replace(/_/g, ' ').toLowerCase()}
     </span>
   );
 }

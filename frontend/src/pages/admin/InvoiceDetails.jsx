@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
-  Download,
   Printer,
   Mail,
   DollarSign,
@@ -13,14 +12,17 @@ import {
   FileText,
   Calendar,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  Ban,
+  Send,
+  History,
+  Check
 } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
-import Input from '../../components/common/Input.jsx';
-import Select from '../../components/common/Select.jsx';
+import RecordPaymentForm from './RecordPaymentForm.jsx';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate, formatDateTime } from '../../utils/formatDate.js';
@@ -37,24 +39,12 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   const [payments, setPayments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Demo Notification Messages
+  const [demoFeedback, setDemoFeedback] = useState(null);
+
   // Modals
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
-  const [isPayModalOpen, setIsPayModalOpen] = useState(false);
-  const [isReminded, setIsReminded] = useState(false);
-
-  const [paymentForm, setPaymentForm] = useState({
-    amount: '',
-    paymentMethod: 'BANK_TRANSFER',
-    reference: '',
-    note: ''
-  });
-
-  const [cardForm, setCardForm] = useState({
-    cardNumber: '•••• •••• •••• 4242',
-    cardName: 'Marcus Sterling',
-    expiry: '12/28',
-    cvc: '883'
-  });
+  const [isCustomerPayModalOpen, setIsCustomerPayModalOpen] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -71,13 +61,6 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
       }
       const payList = await mockDataService.getPayments({ invoiceId: inv.id });
       setPayments(payList);
-
-      setPaymentForm(prev => ({
-        ...prev,
-        amount: inv.balance > 0 ? inv.balance : inv.totalAmount,
-        reference: `REF-${Math.floor(100000 + Math.random() * 900000)}`,
-        note: `Payment for ${inv.invoiceNumber}`
-      }));
     }
     setIsLoading(false);
   };
@@ -86,67 +69,85 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
     loadData();
   }, [invoiceId]);
 
-  const handleCollectPayment = async (e) => {
-    e.preventDefault();
+  const showDemoNotice = (message) => {
+    setDemoFeedback(message);
+    setTimeout(() => setDemoFeedback(null), 5000);
+  };
+
+  // 1. Confirm action (transitions DRAFT -> CONFIRMED)
+  const handleConfirmInvoice = async () => {
     if (!invoice) return;
-
-    await mockDataService.recordPayment({
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      customerId: invoice.customerId,
-      customerName: invoice.customerName,
-      amount: Number(paymentForm.amount) || 0,
-      paymentMethod: paymentForm.paymentMethod,
-      reference: paymentForm.reference || `REF-${Date.now().toString().slice(-6)}`,
-      note: paymentForm.note
-    });
-
-    setIsCollectModalOpen(false);
+    await mockDataService.updateInvoiceStatus(invoice.id, 'CONFIRMED');
     await loadData();
+    showDemoNotice('Invoice confirmed and released for billing settlement in local demonstration state.');
   };
 
-  const handleCustomerPayNow = async (e) => {
-    e.preventDefault();
+  // 2. Cancel action (transitions to CANCELLED)
+  const handleCancelInvoice = async () => {
     if (!invoice) return;
-
-    await mockDataService.recordPayment({
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      customerId: invoice.customerId,
-      customerName: invoice.customerName,
-      amount: invoice.balance,
-      paymentMethod: 'CARD',
-      reference: `STRIPE-CH-${Math.floor(1000000 + Math.random() * 9000000)}`,
-      note: 'Online self-service portal checkout'
-    });
-
-    setIsPayModalOpen(false);
-    await loadData();
+    if (window.confirm('Are you sure you want to cancel this invoice? Its remaining balance will be written off in demo state.')) {
+      await mockDataService.updateInvoiceStatus(invoice.id, 'CANCELLED');
+      await loadData();
+      showDemoNotice('Invoice cancelled in demonstration state.');
+    }
   };
 
-  const handleSendReminder = () => {
-    setIsReminded(true);
-    setTimeout(() => setIsReminded(false), 4000);
+  // 3. Send action
+  const handleSendInvoice = () => {
+    showDemoNotice(`Demonstration action: Invoice ${invoice.invoiceNumber} marked as sent to customer contact. (Note: No actual external email was dispatched)`);
   };
 
+  // 4. Print action
   const handlePrint = () => {
-    window.print();
+    navigate(`${backPath}/${invoice.id}/print`);
+  };
+
+  // 5. Scroll to payment history
+  const handleScrollToPayments = () => {
+    const el = document.getElementById('payment-history-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Customer instant pay
+  const handleCustomerPay = async (e) => {
+    e.preventDefault();
+    if (!invoice) return;
+
+    try {
+      await mockDataService.recordPayment({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        customerId: invoice.customerId,
+        customerName: invoice.customerName,
+        amount: invoice.balance,
+        paymentMethod: 'CARD',
+        reference: `CARD-${Math.floor(100000 + Math.random() * 900000)}`,
+        note: 'Customer self-service online checkout'
+      });
+      setIsCustomerPayModalOpen(false);
+      await loadData();
+      showDemoNotice(`Payment of ${formatCurrency(invoice.balance)} successfully recorded in demo mode.`);
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   if (isLoading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        Loading invoice details...
+      <div className="p-8 text-center text-slate-500">
+        Loading invoice record...
       </div>
     );
   }
 
   if (!invoice) {
     return (
-      <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
-        <AlertCircle size={48} style={{ color: 'var(--danger)', margin: '0 auto 1rem' }} />
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Invoice Not Found</h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center max-w-lg mx-auto shadow-xs">
+        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+        <h2 className="text-lg font-bold text-slate-900">Invoice Record Not Found</h2>
+        <p className="text-slate-500 text-xs mt-1 mb-4">
           No invoice record matches identifier "{invoiceId}".
         </p>
         <Button variant="primary" onClick={() => navigate(backPath)}>
@@ -156,55 +157,106 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
     );
   }
 
-  const isOverdue = invoice.status === 'OVERDUE' || (invoice.balance > 0 && new Date(invoice.dueDate) < new Date());
+  const items = invoice.items || [
+    {
+      id: 'default-1',
+      description: subscription?.planName || 'Brightloop Enterprise Cloud Suite Access',
+      quantity: 1,
+      unitPrice: invoice.subtotal || (invoice.totalAmount * 0.85),
+      taxRate: 18,
+      amount: invoice.subtotal || (invoice.totalAmount * 0.85)
+    }
+  ];
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-      {/* Top action row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Top Header & Actions Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => navigate(backPath)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: 500
-          }}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
         >
-          <ArrowLeft size={16} />
-          Back to Invoices
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Invoices</span>
         </button>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {isReminded && (
-            <span style={{ fontSize: '0.8125rem', color: 'var(--success)', fontWeight: 500 }}>
-              ✓ Reminder email sent to {customer?.email || 'customer'}!
-            </span>
-          )}
-
-          {role !== 'CUSTOMER' && invoice.balance > 0 && (
-            <Button variant="secondary" size="sm" icon={Mail} onClick={handleSendReminder}>
-              Send Reminder
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Action: Confirm */}
+          {role !== 'CUSTOMER' && invoice.status === 'DRAFT' && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Check}
+              onClick={handleConfirmInvoice}
+            >
+              Confirm Invoice
             </Button>
           )}
 
-          <Button variant="secondary" size="sm" icon={Printer} onClick={handlePrint}>
-            Print / PDF
+          {/* Action: Send */}
+          {role !== 'CUSTOMER' && invoice.status !== 'CANCELLED' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Send}
+              onClick={handleSendInvoice}
+            >
+              Send Invoice
+            </Button>
+          )}
+
+          {/* Action: Cancel */}
+          {role !== 'CUSTOMER' && invoice.status !== 'CANCELLED' && invoice.status !== 'PAID' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Ban}
+              onClick={handleCancelInvoice}
+              className="text-rose-600 hover:bg-rose-50"
+            >
+              Cancel
+            </Button>
+          )}
+
+          {/* Action: Print */}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Printer}
+            onClick={handlePrint}
+          >
+            Print Layout
           </Button>
 
-          {invoice.balance > 0 && (
+          {/* Action: View Payment History */}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={History}
+            onClick={handleScrollToPayments}
+          >
+            Payments ({payments.length})
+          </Button>
+
+          {/* Action: Collect Payment / Pay Now */}
+          {invoice.balance > 0 && invoice.status !== 'CANCELLED' && (
             role === 'CUSTOMER' ? (
-              <Button variant="primary" size="sm" icon={CreditCard} onClick={() => setIsPayModalOpen(true)}>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={CreditCard}
+                onClick={() => setIsCustomerPayModalOpen(true)}
+              >
                 Pay Now ({formatCurrency(invoice.balance)})
               </Button>
             ) : (
-              <Button variant="primary" size="sm" icon={DollarSign} onClick={() => setIsCollectModalOpen(true)}>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={DollarSign}
+                onClick={() => setIsCollectModalOpen(true)}
+              >
                 Record Payment
               </Button>
             )
@@ -212,266 +264,280 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
         </div>
       </div>
 
-      {/* KPI Overview Strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <div className="card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Invoice Status
+      {/* Demo Feedback Notification Banner */}
+      {demoFeedback && (
+        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-950 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>{demoFeedback}</span>
           </div>
-          <div style={{ marginTop: '0.375rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            type="button"
+            onClick={() => setDemoFeedback(null)}
+            className="text-indigo-700 hover:text-indigo-900 font-bold ml-2 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* KPI Overview Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Invoice State</div>
+          <div className="mt-1 flex items-center gap-1.5">
             <StatusBadge status={invoice.status} />
-            {isOverdue && invoice.status !== 'PAID' && (
-              <span className="badge badge-danger">Past Due</span>
-            )}
           </div>
         </div>
 
-        <div className="card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Total Invoiced
-          </div>
-          <div style={{ marginTop: '0.375rem', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Total Invoiced</div>
+          <div className="text-xl font-bold text-slate-900 mt-1">
             {formatCurrency(invoice.totalAmount)}
           </div>
         </div>
 
-        <div className="card" style={{ padding: '1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Amount Paid
-          </div>
-          <div style={{ marginTop: '0.375rem', fontSize: '1.25rem', fontWeight: 700, color: 'var(--success)' }}>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Amount Paid</div>
+          <div className="text-xl font-bold text-emerald-600 mt-1">
             {formatCurrency(invoice.paidAmount)}
           </div>
         </div>
 
-        <div className="card" style={{ padding: '1rem 1.25rem', background: invoice.balance > 0 ? '#FEF2F2' : '#F0FDF4', borderColor: invoice.balance > 0 ? '#FECACA' : '#BBF7D0' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: invoice.balance > 0 ? '#991B1B' : '#166534', fontWeight: 600 }}>
-            Remaining Balance
-          </div>
-          <div style={{ marginTop: '0.375rem', fontSize: '1.25rem', fontWeight: 700, color: invoice.balance > 0 ? 'var(--danger)' : 'var(--success)' }}>
+        <div className={`p-4 rounded-xl border shadow-xs ${
+          invoice.balance > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'
+        }`}>
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-600">Outstanding Balance</div>
+          <div className={`text-xl font-bold mt-1 ${invoice.balance > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
             {formatCurrency(invoice.balance)}
           </div>
         </div>
       </div>
 
-      {/* Formal Tax Invoice Document Card */}
-      <div className="card" style={{ padding: '2.5rem', background: '#FFFFFF', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '1.5rem' }}>
+      {/* Document View */}
+      <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-xs space-y-8">
         {/* Document Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #E2E8F0', paddingBottom: '1.75rem', marginBottom: '1.75rem' }}>
+        <div className="flex flex-col sm:flex-row justify-between items-start border-b border-slate-200 pb-6 gap-4">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.5rem' }}>
-              <div style={{ width: 36, height: 36, background: 'var(--primary)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontWeight: 800, fontSize: '1.125rem' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 bg-indigo-600 text-white font-extrabold text-lg flex items-center justify-center rounded-lg">
                 B
               </div>
-              <span style={{ fontSize: '1.375rem', fontWeight: 800, letterSpacing: '-0.025em', color: '#1E293B' }}>
+              <span className="text-xl font-extrabold tracking-tight text-slate-900">
                 Brightloop Software
               </span>
             </div>
-            <div style={{ fontSize: '0.8125rem', color: '#64748B', lineHeight: '1.5' }}>
+            <div className="text-xs text-slate-500 leading-relaxed">
               Brightloop Cloud Technologies, Inc.<br />
               100 Innovation Way, Suite 400<br />
               San Francisco, CA 94105, USA<br />
-              Tax ID / EIN: US-8829104-X | VAT: EU-99238411
+              Tax ID / EIN: US-8829104-X | VAT ID: EU-99238411
             </div>
           </div>
 
-          <div style={{ textAlign: 'right' }}>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <div className="text-left sm:text-right">
+            <h1 className="text-xl font-extrabold uppercase tracking-wider text-slate-900 m-0">
               Tax Invoice
             </h1>
-            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--primary)', marginTop: '0.25rem' }}>
+            <div className="text-base font-bold font-mono text-indigo-600 mt-0.5">
               {invoice.invoiceNumber}
             </div>
-            <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: '#64748B', lineHeight: '1.5' }}>
-              <div><strong>Issue Date:</strong> {formatDate(invoice.issueDate)}</div>
-              <div><strong>Due Date:</strong> {formatDate(invoice.dueDate)}</div>
-              <div><strong>Payment Terms:</strong> Net 15 Days</div>
+            <div className="text-xs text-slate-600 mt-2 space-y-0.5">
+              <div><span className="font-semibold text-slate-700">Invoice Date:</span> {formatDate(invoice.issueDate)}</div>
+              <div><span className="font-semibold text-slate-700">Due Date:</span> {formatDate(invoice.dueDate)}</div>
+              {invoice.billingPeriod && (
+                <div><span className="font-semibold text-slate-700">Billing Period:</span> {invoice.billingPeriod}</div>
+              )}
+              <div><span className="font-semibold text-slate-700">Terms:</span> Net 15 Days</div>
             </div>
           </div>
         </div>
 
-        {/* Client & Billing Details Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem', padding: '1rem', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+        {/* Customer & Subscription Context */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
           <div>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#64748B', marginBottom: '0.5rem' }}>
-              Billed To
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              Customer Details & Billing Address
             </div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+            <div className="text-sm font-bold text-slate-900">
               {customer?.companyName || invoice.customerName}
             </div>
-            <div style={{ fontSize: '0.875rem', color: '#334155', marginTop: '0.25rem' }}>
+            <div className="text-slate-700 mt-0.5 font-medium">
               Attn: {customer?.name || invoice.customerName}
             </div>
-            <div style={{ fontSize: '0.8125rem', color: '#64748B', marginTop: '0.25rem', lineHeight: '1.4' }}>
+            <div className="text-slate-600 mt-1 leading-relaxed">
               {customer?.billingAddress?.street || '742 Evergreen Terrace'}<br />
               {customer?.billingAddress?.city || 'San Francisco'}, {customer?.billingAddress?.state || 'CA'} {customer?.billingAddress?.zip || '94107'}<br />
-              {customer?.email || 'billing@customer.com'} | {customer?.phone || '+1 (555) 234-5678'}
+              Email: {customer?.email || 'billing@acme.com'} | Phone: {customer?.phone || '+1 (555) 234-5678'}
             </div>
             {customer?.taxId && (
-              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '0.5rem' }}>
-                <strong>Client Tax ID:</strong> {customer.taxId}
+              <div className="text-slate-600 mt-1 font-medium">
+                Tax Reg / VAT: {customer.taxId}
               </div>
             )}
           </div>
 
           <div>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, color: '#64748B', marginBottom: '0.5rem' }}>
-              Subscription & Plan Context
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              Subscription Context
             </div>
-            {subscription ? (
-              <div style={{ fontSize: '0.875rem', color: '#334155', lineHeight: '1.5' }}>
-                <div>
-                  <strong>Subscription ID:</strong>{' '}
-                  <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{subscription.subscriptionNumber}</span>
-                </div>
-                <div><strong>Enrolled Plan:</strong> {subscription.planName}</div>
-                <div><strong>Cadence:</strong> {subscription.billingInterval} recurring</div>
-                <div><strong>Current Period:</strong> {formatDate(subscription.startDate)} to {formatDate(subscription.nextBillingDate)}</div>
+            <div className="text-slate-700 space-y-1">
+              <div>
+                <span className="font-semibold text-slate-900">Linked Subscription:</span>{' '}
+                <span className="font-mono text-indigo-700">{invoice.subscriptionId || 'One-Off Billing'}</span>
               </div>
-            ) : (
-              <div style={{ fontSize: '0.875rem', color: '#64748B' }}>
-                Linked to Subscription #{invoice.subscriptionId || 'SUB-2026-081'}
-              </div>
-            )}
+              {subscription && (
+                <>
+                  <div><span className="font-semibold text-slate-900">Subscription Plan:</span> {subscription.planName}</div>
+                  <div><span className="font-semibold text-slate-900">Cadence:</span> {subscription.billingInterval}</div>
+                  <div><span className="font-semibold text-slate-900">Cycle:</span> {formatDate(subscription.startDate)} to {formatDate(subscription.nextBillingDate)}</div>
+                </>
+              )}
+            </div>
 
-            <div style={{ marginTop: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.375rem', padding: '0.25rem 0.625rem', background: '#EEF2FF', borderRadius: '4px', fontSize: '0.75rem', color: '#4338CA', fontWeight: 600 }}>
-              <ShieldCheck size={14} />
-              Verified Electronic Invoice Record
+            <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Certified Brightloop Digital Invoice</span>
             </div>
           </div>
         </div>
 
-        {/* Itemized Table */}
-        <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+        {/* Product Lines */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr style={{ borderBottom: '2px solid #CBD5E1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                <th style={{ padding: '0.75rem 0.5rem' }}>Item & Description</th>
-                <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>Billing Cycle</th>
-                <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>Unit Rate</th>
-                <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>Qty</th>
-                <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>Line Total</th>
+              <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[11px]">
+                <th className="py-2.5 font-semibold">Product Line</th>
+                <th className="py-2.5 text-center font-semibold">Quantity</th>
+                <th className="py-2.5 text-right font-semibold">Unit Price</th>
+                <th className="py-2.5 text-center font-semibold">Tax Rate</th>
+                <th className="py-2.5 text-right font-semibold">Line Amount</th>
               </tr>
             </thead>
-            <tbody>
-              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                <td style={{ padding: '1rem 0.5rem' }}>
-                  <div style={{ fontWeight: 600, color: '#0F172A' }}>
-                    {subscription?.planName || 'Brightloop Enterprise Cloud Suite'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '0.25rem' }}>
-                    Automated SaaS tier access, multi-tenant database provisioning & 99.99% SLA uptime
-                  </div>
-                </td>
-                <td style={{ padding: '1rem 0.5rem', textAlign: 'center', color: '#475569' }}>
-                  {subscription?.billingInterval || 'Monthly'}
-                </td>
-                <td style={{ padding: '1rem 0.5rem', textAlign: 'right', fontWeight: 500 }}>
-                  {formatCurrency(invoice.subtotal || invoice.totalAmount * 0.85)}
-                </td>
-                <td style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>1</td>
-                <td style={{ padding: '1rem 0.5rem', textAlign: 'right', fontWeight: 600, color: '#0F172A' }}>
-                  {formatCurrency(invoice.subtotal || invoice.totalAmount * 0.85)}
-                </td>
-              </tr>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((line, idx) => (
+                <tr key={idx}>
+                  <td className="py-3 pr-2">
+                    <div className="font-semibold text-slate-900">{line.description}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Cloud managed subscription software service tier
+                    </div>
+                  </td>
+                  <td className="py-3 text-center text-slate-700">{line.quantity}</td>
+                  <td className="py-3 text-right text-slate-700 font-mono">{formatCurrency(line.unitPrice)}</td>
+                  <td className="py-3 text-center text-slate-600">{line.taxRate || 18}%</td>
+                  <td className="py-3 text-right font-bold text-slate-900 font-mono">
+                    {formatCurrency(line.amount || (line.quantity * line.unitPrice))}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
 
         {/* Financial Breakdown Totals */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
-          <div style={{ width: '320px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.375rem 0', fontSize: '0.875rem', color: '#475569' }}>
+        <div className="flex justify-end pt-4 border-t border-slate-100">
+          <div className="w-80 space-y-2 text-xs">
+            <div className="flex justify-between text-slate-600">
               <span>Subtotal:</span>
-              <span style={{ fontWeight: 600, color: '#0F172A' }}>
-                {formatCurrency(invoice.subtotal || invoice.totalAmount * 0.85)}
+              <span className="font-semibold text-slate-900 font-mono">
+                {formatCurrency(invoice.subtotal || (invoice.totalAmount * 0.85))}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.375rem 0', fontSize: '0.875rem', color: '#475569' }}>
-              <span>Tax (GST / Sales Tax 18%):</span>
-              <span style={{ fontWeight: 600, color: '#0F172A' }}>
-                {formatCurrency(invoice.taxAmount || invoice.totalAmount * 0.15)}
+            {Number(invoice.discountAmount || 0) > 0 && (
+              <div className="flex justify-between text-emerald-700 font-semibold">
+                <span>Discount:</span>
+                <span className="font-mono">- {formatCurrency(invoice.discountAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-slate-600">
+              <span>Tax (GST / VAT 18%):</span>
+              <span className="font-semibold text-slate-900 font-mono">
+                {formatCurrency(invoice.taxAmount || (invoice.totalAmount * 0.15))}
               </span>
             </div>
-            <div style={{ borderTop: '2px solid #E2E8F0', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontSize: '1.125rem', fontWeight: 800, color: '#0F172A' }}>
-              <span>Total Invoiced:</span>
-              <span>{formatCurrency(invoice.totalAmount)}</span>
+            <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
+              <span>Grand Total:</span>
+              <span className="font-mono">{formatCurrency(invoice.totalAmount)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.375rem 0', fontSize: '0.875rem', color: 'var(--success)' }}>
+            <div className="flex justify-between text-emerald-700 font-semibold pt-1">
               <span>Amount Paid:</span>
-              <span style={{ fontWeight: 600 }}>- {formatCurrency(invoice.paidAmount)}</span>
+              <span className="font-mono">- {formatCurrency(invoice.paidAmount)}</span>
             </div>
-            <div style={{ borderTop: '1px dashed #CBD5E1', marginTop: '0.375rem', paddingTop: '0.375rem', display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 800, color: invoice.balance > 0 ? 'var(--danger)' : 'var(--success)' }}>
-              <span>Outstanding Balance:</span>
-              <span>{formatCurrency(invoice.balance)}</span>
+            <div className="flex justify-between text-sm font-bold pt-2 border-t border-dashed border-slate-300">
+              <span className={invoice.balance > 0 ? 'text-rose-600' : 'text-slate-900'}>
+                Outstanding Balance:
+              </span>
+              <span className={`font-mono ${invoice.balance > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                {formatCurrency(invoice.balance)}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Banking and Remittance Footer */}
-        <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '1.25rem', display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1.5rem', fontSize: '0.75rem', color: '#64748B' }}>
+        {/* Remittance Information */}
+        <div className="pt-6 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-500">
           <div>
-            <strong style={{ color: '#334155', display: 'block', marginBottom: '0.25rem' }}>Remittance / Wire Transfer Details:</strong>
-            Bank Name: Silicon Valley Commercial Bank<br />
-            Account Name: Brightloop Software Inc.<br />
-            Account Number: 9812-4412-0091 | Routing (ABA): 121000358<br />
-            SWIFT/BIC: SVBKUS6S | Reference: {invoice.invoiceNumber}
+            <div className="font-semibold text-slate-700 mb-1">Bank Remittance Wire Details</div>
+            <div>Silicon Valley Commercial Bank | Routing: 121000358</div>
+            <div>Account: 9812-4412-0091 (Brightloop Software Inc.) | SWIFT: SVBKUS6S</div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <strong style={{ color: '#334155', display: 'block', marginBottom: '0.25rem' }}>Customer Support:</strong>
-            support@brightloopsoftware.com<br />
-            Toll-Free: +1 (800) 555-LOOP<br />
-            All subscriptions subject to Brightloop Master Terms of Service.
+          <div className="sm:text-right">
+            <div className="font-semibold text-slate-700 mb-1">Customer Support</div>
+            <div>accounts-receivable@brightloopsoftware.com | +1 (800) 555-LOOP</div>
           </div>
         </div>
       </div>
 
-      {/* Linked Reconciled Payments Table */}
-      <div className="card">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Payment Settlement History Section */}
+      <div id="payment-history-section" className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h3 className="card-title">Payment Settlement History</h3>
-            <p className="card-subtitle">Transactions credited toward this invoice</p>
+            <h3 className="text-sm font-bold text-slate-900">Reconciled Payment History</h3>
+            <p className="text-xs text-slate-500">Transactions credited toward {invoice.invoiceNumber}</p>
           </div>
           {invoice.balance > 0 && role !== 'CUSTOMER' && (
-            <Button variant="outline" size="sm" icon={DollarSign} onClick={() => setIsCollectModalOpen(true)}>
-              Record Transaction
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={DollarSign}
+              onClick={() => setIsCollectModalOpen(true)}
+            >
+              Record Payment
             </Button>
           )}
         </div>
 
         {payments.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No settled transactions recorded against this invoice yet.
+          <div className="p-8 text-center text-xs text-slate-400">
+            No payments have been posted to this invoice yet.
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Receipt #</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Date & Time</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Method</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Reference</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Amount</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Status</th>
+                <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="py-2.5">Reference #</th>
+                  <th className="py-2.5">Settlement Date</th>
+                  <th className="py-2.5">Payment Method</th>
+                  <th className="py-2.5 text-right">Amount</th>
+                  <th className="py-2.5 text-center">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {payments.map(p => (
-                  <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{p.paymentNumber}</td>
-                    <td style={{ padding: '0.75rem 1rem', color: '#64748B' }}>{formatDateTime(p.paymentDate)}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <span className="badge badge-info">{p.paymentMethod}</span>
+                  <tr key={p.id}>
+                    <td className="py-3 font-mono font-semibold text-indigo-700">{p.paymentNumber}</td>
+                    <td className="py-3 text-slate-600">{formatDateTime(p.paymentDate)}</td>
+                    <td className="py-3">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
+                        {p.paymentMethod}
+                      </span>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                      {p.reference || '—'}
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                    <td className="py-3 text-right font-bold text-emerald-600 font-mono">
                       {formatCurrency(p.amount)}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    <td className="py-3 text-center">
                       <StatusBadge status={p.status} />
                     </td>
                   </tr>
@@ -482,130 +548,92 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
         )}
       </div>
 
-      {/* Admin/Staff Record Payment Modal */}
+      {/* Admin / Staff Record Payment Modal */}
       <Modal
         isOpen={isCollectModalOpen}
         onClose={() => setIsCollectModalOpen(false)}
         title={`Record Payment for ${invoice.invoiceNumber}`}
       >
-        <form onSubmit={handleCollectPayment}>
-          <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#F8FAFC', borderRadius: 'var(--radius-md)', border: '1px solid #E2E8F0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
-              <span>Customer:</span>
-              <strong>{invoice.customerName}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginTop: '4px' }}>
-              <span>Outstanding Balance:</span>
-              <strong style={{ color: 'var(--danger)' }}>{formatCurrency(invoice.balance)}</strong>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <Input
-              label="Amount to Credit ($)"
-              type="number"
-              step="0.01"
-              value={paymentForm.amount}
-              onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-              required
-            />
-
-            <Select
-              label="Payment Channel"
-              value={paymentForm.paymentMethod}
-              onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
-              options={[
-                { value: 'BANK_TRANSFER', label: 'Bank Wire / ACH' },
-                { value: 'CARD', label: 'Credit / Debit Card' },
-                { value: 'UPI', label: 'UPI / Instant Pay' },
-                { value: 'CASH', label: 'Cash / Manual Cheque' }
-              ]}
-              required
-            />
-          </div>
-
-          <Input
-            label="Transaction Reference / Cheque #"
-            value={paymentForm.reference}
-            onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
-            placeholder="e.g. TXN-8829104"
-            required
-          />
-
-          <Input
-            label="Internal Notes"
-            value={paymentForm.note}
-            onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
-            placeholder="Reconciliation ledger note"
-          />
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
-            <Button variant="secondary" onClick={() => setIsCollectModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary">
-              Confirm & Post Ledger
-            </Button>
-          </div>
-        </form>
+        <RecordPaymentForm
+          initialInvoiceId={invoice.id}
+          initialCustomerId={invoice.customerId}
+          onSuccess={() => {
+            setIsCollectModalOpen(false);
+            loadData();
+            showDemoNotice('Payment posted successfully and invoice balance updated in demo state.');
+          }}
+          onCancel={() => setIsCollectModalOpen(false)}
+        />
       </Modal>
 
-      {/* Customer Pay Now Checkout Modal */}
+      {/* Customer Pay Now Modal */}
       <Modal
-        isOpen={isPayModalOpen}
-        onClose={() => setIsPayModalOpen(false)}
-        title="Secure Customer Checkout"
+        isOpen={isCustomerPayModalOpen}
+        onClose={() => setIsCustomerPayModalOpen(false)}
+        title="Secure Customer Invoice Checkout"
       >
-        <form onSubmit={handleCustomerPayNow}>
-          <div style={{ marginBottom: '1.25rem', padding: '1rem', background: '#EEF2FF', borderRadius: 'var(--radius-md)', border: '1px solid #C7D2FE' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.875rem', color: '#3730A3' }}>Amount Due Now:</span>
-              <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#312E81' }}>{formatCurrency(invoice.balance)}</span>
+        <form onSubmit={handleCustomerPay} className="space-y-4">
+          <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs space-y-1">
+            <div className="flex justify-between text-indigo-900 font-semibold">
+              <span>Invoice:</span>
+              <span>{invoice.invoiceNumber}</span>
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#4338CA', marginTop: '0.25rem' }}>
-              Settling Invoice #{invoice.invoiceNumber}
+            <div className="flex justify-between text-indigo-950 font-bold text-sm">
+              <span>Outstanding Balance:</span>
+              <span>{formatCurrency(invoice.balance)}</span>
             </div>
           </div>
 
-          <Input
-            label="Cardholder Name"
-            value={cardForm.cardName}
-            onChange={(e) => setCardForm({ ...cardForm, cardName: e.target.value })}
-            required
-          />
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Cardholder Name</label>
+              <input
+                type="text"
+                defaultValue={customer?.name || invoice.customerName}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                required
+              />
+            </div>
 
-          <Input
-            label="Card Number"
-            value={cardForm.cardNumber}
-            onChange={(e) => setCardForm({ ...cardForm, cardNumber: e.target.value })}
-            placeholder="4242 •••• •••• 4242"
-            required
-          />
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Card Number</label>
+              <input
+                type="text"
+                defaultValue="4242 •••• •••• 4242"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                required
+              />
+            </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <Input
-              label="Expiry (MM/YY)"
-              value={cardForm.expiry}
-              onChange={(e) => setCardForm({ ...cardForm, expiry: e.target.value })}
-              placeholder="MM/YY"
-              required
-            />
-            <Input
-              label="CVC / CVV"
-              value={cardForm.cvc}
-              onChange={(e) => setCardForm({ ...cardForm, cvc: e.target.value })}
-              placeholder="3 digits"
-              required
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Expiry (MM/YY)</label>
+                <input
+                  type="text"
+                  defaultValue="12/28"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">CVC</label>
+                <input
+                  type="text"
+                  defaultValue="883"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+            </div>
           </div>
 
-          <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '0.375rem', margin: '0.75rem 0 1.25rem' }}>
-            <ShieldCheck size={16} style={{ color: 'var(--success)' }} />
-            256-bit SSL encrypted. Payment will be credited immediately to your subscription.
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-500 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Demonstration checkout: payment will instantly settle invoice balance.</span>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <Button variant="secondary" onClick={() => setIsPayModalOpen(false)}>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setIsCustomerPayModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" icon={CreditCard}>

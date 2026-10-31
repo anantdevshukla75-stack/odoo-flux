@@ -35,10 +35,12 @@ import SubscriptionDetails from './pages/admin/SubscriptionDetails.jsx';
 
 // Invoicing, Taxes & Team
 import AdminTaxes from './pages/admin/Taxes.jsx';
-import AdminDiscounts from './pages/admin/AdminDiscounts.jsx';
-import AdminInvoices from './pages/admin/AdminInvoices.jsx';
+import Discounts from './pages/admin/Discounts.jsx';
+import DiscountForm from './pages/admin/DiscountForm.jsx';
+import Invoices from './pages/admin/Invoices.jsx';
 import InvoiceDetails from './pages/admin/InvoiceDetails.jsx';
-import AdminPayments from './pages/admin/AdminPayments.jsx';
+import InvoicePrint from './pages/admin/InvoicePrint.jsx';
+import Payments from './pages/admin/Payments.jsx';
 import AdminStaff from './pages/admin/Staff.jsx';
 import AdminReports from './pages/admin/AdminReports.jsx';
 
@@ -113,14 +115,21 @@ export function App() {
 
               {/* Invoicing, Taxes & Team */}
               <Route path="/admin/taxes" element={<AdminTaxes />} />
-              <Route path="/admin/discounts" element={<AdminDiscounts />} />
-              <Route path="/admin/invoices" element={<AdminInvoices basePath="/admin/invoices" />} />
+              <Route path="/admin/discounts" element={<Discounts />} />
+              <Route path="/admin/discounts/new" element={<DiscountForm />} />
+              <Route path="/admin/discounts/:discountId/edit" element={<DiscountForm />} />
+              <Route path="/admin/invoices" element={<Invoices basePath="/admin/invoices" />} />
               <Route path="/admin/invoices/:invoiceId" element={<InvoiceDetails backPath="/admin/invoices" />} />
-              <Route path="/admin/payments" element={<AdminPayments />} />
+              <Route path="/admin/payments" element={<Payments basePath="/admin/payments" />} />
               <Route path="/admin/team" element={<AdminStaff />} />
               <Route path="/admin/reports" element={<AdminReports />} />
             </Route>
           </Route>
+
+          {/* Dedicated Print Routes (Chrome-free print layout) */}
+          <Route path="/admin/invoices/:invoiceId/print" element={<InvoicePrint />} />
+          <Route path="/staff/invoices/:invoiceId/print" element={<InvoicePrint />} />
+          <Route path="/customer/invoices/:invoiceId/print" element={<InvoicePrint />} />
 
           {/* STAFF Routes */}
           <Route element={<ProtectedRoute allowedRoles={['STAFF', 'ADMIN']} />}>
@@ -139,9 +148,9 @@ export function App() {
               <Route path="/staff/subscriptions/:subscriptionId" element={<SubscriptionDetails backPath="/staff/subscriptions" />} />
 
               {/* Staff Invoices & Operations */}
-              <Route path="/staff/invoices" element={<AdminInvoices basePath="/staff/invoices" />} />
+              <Route path="/staff/invoices" element={<Invoices basePath="/staff/invoices" />} />
               <Route path="/staff/invoices/:invoiceId" element={<InvoiceDetails backPath="/staff/invoices" />} />
-              <Route path="/staff/payments" element={<AdminPayments />} />
+              <Route path="/staff/payments" element={<Payments basePath="/staff/payments" />} />
               <Route path="/staff/overdue" element={<StaffOverdue />} />
             </Route>
           </Route>
@@ -158,9 +167,9 @@ export function App() {
               <Route path="/customer/subscriptions/:subscriptionId" element={<SubscriptionDetails backPath="/customer/subscriptions" />} />
 
               {/* Billing & Profile */}
-              <Route path="/customer/invoices" element={<CustomerInvoices />} />
+              <Route path="/customer/invoices" element={<Invoices basePath="/customer/invoices" />} />
               <Route path="/customer/invoices/:invoiceId" element={<InvoiceDetails backPath="/customer/invoices" />} />
-              <Route path="/customer/payments" element={<CustomerPayments />} />
+              <Route path="/customer/payments" element={<Payments basePath="/customer/payments" />} />
               <Route path="/customer/profile" element={<CustomerProfile />} />
             </Route>
           </Route>

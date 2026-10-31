@@ -431,6 +431,31 @@ class MockDataService {
     return newInvoice;
   }
 
+  async updateInvoiceStatus(id, newStatus) {
+    const list = this._get('bl_invoices');
+    const index = list.findIndex(i => i.id === id || i.invoiceNumber === id);
+    if (index !== -1) {
+      list[index].status = newStatus;
+      if (newStatus === 'CANCELLED') {
+        list[index].balance = 0.00;
+      }
+      this._set('bl_invoices', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async updateInvoice(id, invoiceData) {
+    const list = this._get('bl_invoices');
+    const index = list.findIndex(i => i.id === id || i.invoiceNumber === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...invoiceData };
+      this._set('bl_invoices', list);
+      return list[index];
+    }
+    return null;
+  }
+
   // --- Payments ---
   async getPayments(filter = {}) {
     let list = this._get('bl_payments');
@@ -449,6 +474,35 @@ class MockDataService {
   }
 
   async recordPayment(paymentData) {
+    const invoices = this._get('bl_invoices');
+    const invIndex = invoices.findIndex(i => i.id === paymentData.invoiceId || i.invoiceNumber === paymentData.invoiceNumber);
+
+    if (invIndex !== -1) {
+      const inv = invoices[invIndex];
+      const payAmount = Number(paymentData.amount) || 0;
+      const currentBalance = Number(inv.balance || 0);
+
+      // Reject overpayment in demonstration mode
+      if (payAmount > currentBalance + 0.001) {
+        throw new Error(
+          `Overpayment Rejected: Entered payment of $${payAmount.toFixed(2)} exceeds current outstanding balance of $${currentBalance.toFixed(2)}.`
+        );
+      }
+
+      const newPaid = Number(inv.paidAmount || 0) + payAmount;
+      const newBalance = Math.max(0, Number(inv.totalAmount) - newPaid);
+      inv.paidAmount = Number(newPaid.toFixed(2));
+      inv.balance = Number(newBalance.toFixed(2));
+
+      if (newBalance <= 0.01) {
+        inv.status = 'PAID';
+        inv.paidAt = new Date().toISOString();
+      } else {
+        inv.status = 'PARTIALLY_PAID';
+      }
+      this._set('bl_invoices', invoices);
+    }
+
     const list = this._get('bl_payments');
     const newPayment = {
       id: `pay-${Date.now().toString().slice(-4)}`,
@@ -459,22 +513,6 @@ class MockDataService {
     };
     list.unshift(newPayment);
     this._set('bl_payments', list);
-
-    // Update invoice balance and status
-    const invoices = this._get('bl_invoices');
-    const invIndex = invoices.findIndex(i => i.id === paymentData.invoiceId || i.invoiceNumber === paymentData.invoiceNumber);
-    if (invIndex !== -1) {
-      const inv = invoices[invIndex];
-      const newPaid = Number(inv.paidAmount || 0) + Number(paymentData.amount);
-      const newBalance = Math.max(0, Number(inv.totalAmount) - newPaid);
-      inv.paidAmount = newPaid;
-      inv.balance = newBalance;
-      if (newBalance <= 0) {
-        inv.status = 'PAID';
-        inv.paidAt = new Date().toISOString();
-      }
-      this._set('bl_invoices', invoices);
-    }
 
     return newPayment;
   }
@@ -501,17 +539,103 @@ class MockDataService {
     return this._get('bl_discounts');
   }
 
+  async getDiscountById(id) {
+    const list = this._get('bl_discounts');
+    return list.find(d => d.id === id || d.code === id) || null;
+  }
+
   async createDiscount(data) {
     const list = this._get('bl_discounts');
     const newDiscount = {
       id: `disc-${Date.now().toString().slice(-4)}`,
       isActive: true,
       redemptionsCount: 0,
+      minPurchase: 0,
+      minQuantity: 1,
+      applicability: 'ALL',
+      applicableProducts: [],
+      applicableSubscriptions: [],
       ...data
     };
     list.unshift(newDiscount);
     this._set('bl_discounts', list);
     return newDiscount;
+  }
+
+  async updateDiscount(id, data) {
+    const list = this._get('bl_discounts');
+    const index = list.findIndex(d => d.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...data };
+      this._set('bl_discounts', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async toggleDiscountStatus(id) {
+    const list = this._get('bl_discounts');
+    const index = list.findIndex(d => d.id === id);
+    if (index !== -1) {
+      list[index].isActive = !list[index].isActive;
+      this._set('bl_discounts', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async deleteDiscount(id) {
+    let list = this._get('bl_discounts');
+    list = list.filter(d => d.id !== id);
+    this._set('bl_discounts', list);
+    return true;
+  }
+
+  checkDiscountEligibility(discount, { purchaseAmount = 0, quantity = 1, productId = null, planId = null } = {}) {
+    if (!discount.isActive) {
+      return { eligible: false, message: 'Discount is currently deactivated / inactive.' };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (discount.startDate && discount.startDate > todayStr) {
+      return { eligible: false, message: 'Not yet active. (Begins on ' + discount.startDate + ')' };
+    }
+
+    if (discount.endDate && discount.endDate < todayStr) {
+      return { eligible: false, message: 'Expired. (Ended on ' + discount.endDate + ')' };
+    }
+
+    if (discount.usageLimit && (discount.redemptionsCount || 0) >= discount.usageLimit) {
+      return { eligible: false, message: 'Usage limit exhausted. (Limit of ' + discount.usageLimit + ' reached)' };
+    }
+
+    if (discount.minPurchase && purchaseAmount < discount.minPurchase) {
+      return {
+        eligible: false,
+        message: `Minimum purchase not reached. Requires order total of at least $${discount.minPurchase.toFixed(2)}.`
+      };
+    }
+
+    if (discount.minQuantity && quantity < discount.minQuantity) {
+      return {
+        eligible: false,
+        message: `Minimum quantity of ${discount.minQuantity} items not reached.`
+      };
+    }
+
+    if (discount.applicability === 'PRODUCT_SPECIFIC') {
+      if (!productId || !(discount.applicableProducts || []).includes(productId)) {
+        return { eligible: false, message: 'Product not eligible for this coupon.' };
+      }
+    }
+
+    if (discount.applicability === 'SUBSCRIPTION_WIDE') {
+      if (planId && (discount.applicableSubscriptions || []).length > 0 && !discount.applicableSubscriptions.includes(planId)) {
+        return { eligible: false, message: 'Subscription plan not eligible for this concession.' };
+      }
+    }
+
+    return { eligible: true, message: 'Coupon eligible! Concession successfully calculated.' };
   }
 
   // --- Staff ---
