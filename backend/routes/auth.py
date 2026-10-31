@@ -185,11 +185,8 @@ def reset_password(
 def staff(
     data: user.StaffCreate,
     session: Session = Depends(db.get_session),
-    current_user: model.User = Depends(auth.get_current_active_user),
+    current_user: model.User = Depends(auth.require_admin),
 ):
-    if current_user.role != model.UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-
     try:
         new_user = create_user(
             session,
