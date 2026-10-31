@@ -9,5 +9,6 @@ dependencies = [
     "pwdlib>=0.3.1",
     "pydantic-settings>=2.16.2",
     "pyjwt>=2.15.1",
+    "python-multipart>=0.0.32",
     "sqlmodel>=0.0.48",
 ]
