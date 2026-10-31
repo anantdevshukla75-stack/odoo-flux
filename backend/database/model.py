@@ -226,3 +226,131 @@ class SubscriptionLine(SQLModel, table=True):
 
     subscription: "Subscription" = Relationship(back_populates="lines")
 
+
+class InvoiceStatus(str, Enum):
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    PARTIALLY_PAID = "partially_paid"
+    PAID = "paid"
+    CANCELLED = "cancelled"
+
+
+class Invoice(SQLModel, table=True):
+    __tablename__ = "invoices"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    invoice_number: str = Field(unique=True, index=True, nullable=False)
+
+    customer_id: int = Field(
+        foreign_key="customers.id", nullable=False, index=True
+    )
+
+    subscription_id: int = Field(
+        foreign_key="subscriptions.id", nullable=False, index=True
+    )
+
+    issue_date: date = Field(nullable=False)
+
+    due_date: date = Field(nullable=False)
+
+    billing_period_start: date = Field(nullable=False)
+
+    billing_period_end: date = Field(nullable=False)
+
+    subtotal: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    discount_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    tax_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    total_amount: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    status: InvoiceStatus = Field(
+        default=InvoiceStatus.DRAFT, nullable=False
+    )
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    lines: list["InvoiceLine"] = Relationship(
+        back_populates="invoice", cascade_delete=True
+    )
+
+    payments: list["Payment"] = Relationship(back_populates="invoice")
+
+
+class InvoiceLine(SQLModel, table=True):
+    __tablename__ = "invoice_lines"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    invoice_id: int = Field(
+        foreign_key="invoices.id", nullable=False, index=True
+    )
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    description: str = Field(nullable=False)
+
+    quantity: int = Field(default=1, nullable=False)
+
+    unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    discount_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    tax_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(12, 2), nullable=False),
+    )
+
+    line_total: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    invoice: "Invoice" = Relationship(back_populates="lines")
+
+
+class PaymentMethod(str, Enum):
+    CASH = "cash"
+    BANK_TRANSFER = "bank_transfer"
+    CARD = "card"
+    UPI = "upi"
+    OTHER = "other"
+
+
+class Payment(SQLModel, table=True):
+    __tablename__ = "payments"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    invoice_id: int = Field(
+        foreign_key="invoices.id", nullable=False, index=True
+    )
+
+    payment_method: PaymentMethod = Field(nullable=False)
+
+    amount: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    payment_date: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    reference: str | None = Field(default=None, nullable=True)
+
+    note: str | None = Field(default=None, nullable=True)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    invoice: "Invoice" = Relationship(back_populates="payments")
+
