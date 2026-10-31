@@ -50,3 +50,17 @@ class Customer(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), nullable=False
     )
+
+
+class PasswordResetToken(SQLModel, table=True):
+    __tablename__ = "password_reset_tokens"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+
+    token_hash: str = Field(unique=True, index=True, nullable=False)
+
+    expires_at: datetime = Field(nullable=False)
+
+    used_at: datetime | None = Field(default=None, nullable=True)
