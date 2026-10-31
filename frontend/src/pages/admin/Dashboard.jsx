@@ -25,7 +25,6 @@ import StatCard from '../../components/common/StatCard.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
 import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
@@ -58,7 +57,7 @@ export function Dashboard() {
           apiService.getCustomers(),
           apiService.getSubscriptions(),
           apiService.getInvoices(),
-          mockDataService.getQuotations(),
+          apiService.getQuotations().catch(() => []),
           apiService.getPayments()
         ]);
 

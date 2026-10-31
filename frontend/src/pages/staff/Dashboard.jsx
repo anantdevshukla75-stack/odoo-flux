@@ -17,7 +17,6 @@ import StatCard from '../../components/common/StatCard.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
 import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
@@ -39,7 +38,7 @@ export function Dashboard() {
         const [dashboardSummary, c, q, s, inv, p] = await Promise.all([
           apiService.getDashboardSummary(),
           apiService.getCustomers(),
-          mockDataService.getQuotations(),
+          apiService.getQuotations().catch(() => []),
           apiService.getSubscriptions(),
           apiService.getInvoices(),
           apiService.getPayments()
