@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** the backend currently mounts the auth router at `/auth` (no version prefix). The `/api/v1` prefix is the target defined in [PRD §9](PRD.md#9-api-endpoints). Only the auth module is implemented today.
+> **Implementation status:** only the auth module is implemented today. It is mounted under `/api/v1`, and the remaining modules will follow the same prefix.
 
 ## Conventions
 
