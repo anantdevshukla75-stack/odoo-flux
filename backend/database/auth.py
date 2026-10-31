@@ -44,6 +44,12 @@ def create_user(
     session.add(db_user)
 
     try:
+        # Assign the primary key before linking the customer profile
+        session.flush()
+
+        if role == model.UserRole.CUSTOMER:
+            session.add(model.Customer(user_id=db_user.id))
+
         session.commit()
     except IntegrityError as exc:
         session.rollback()
