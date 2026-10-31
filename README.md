@@ -2,6 +2,8 @@
 
 Subscription and billing management platform: React/Vite frontend + FastAPI/SQLModel backend.
 
+https://odoo-flux.onrender.com/
+
 ## Structure
 
 - `frontend/` - React + Vite web app (role-based dashboards for admin, staff, customer)
