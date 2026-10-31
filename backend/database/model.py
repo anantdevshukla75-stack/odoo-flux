@@ -31,6 +31,8 @@ class User(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC), nullable=False
     )
 
+    customer: "Customer" = Relationship(back_populates="user")
+
 
 class Customer(SQLModel, table=True):
     __tablename__ = "customers"
@@ -52,6 +54,8 @@ class Customer(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), nullable=False
     )
+
+    user: "User" = Relationship(back_populates="customer")
 
 
 class PasswordResetToken(SQLModel, table=True):
@@ -155,4 +159,70 @@ class PlanLine(SQLModel, table=True):
     unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
 
     plan: "Plan" = Relationship(back_populates="lines")
+
+
+class SubscriptionStatus(str, Enum):
+    DRAFT = "draft"
+    QUOTATION = "quotation"
+    CONFIRMED = "confirmed"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    CLOSED = "closed"
+
+
+class Subscription(SQLModel, table=True):
+    __tablename__ = "subscriptions"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    subscription_number: str = Field(unique=True, index=True, nullable=False)
+
+    customer_id: int = Field(
+        foreign_key="customers.id", nullable=False, index=True
+    )
+
+    plan_id: int = Field(foreign_key="plans.id", nullable=False, index=True)
+
+    start_date: date = Field(nullable=False)
+
+    expiry_date: date | None = Field(default=None, nullable=True)
+
+    next_billing_date: date | None = Field(default=None, nullable=True)
+
+    payment_terms_days: int = Field(default=0, nullable=False)
+
+    status: SubscriptionStatus = Field(
+        default=SubscriptionStatus.DRAFT, nullable=False
+    )
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
+
+    lines: list["SubscriptionLine"] = Relationship(
+        back_populates="subscription", cascade_delete=True
+    )
+
+
+class SubscriptionLine(SQLModel, table=True):
+    __tablename__ = "subscription_lines"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    subscription_id: int = Field(
+        foreign_key="subscriptions.id", nullable=False, index=True
+    )
+
+    product_id: int = Field(foreign_key="products.id", nullable=False, index=True)
+
+    quantity: int = Field(default=1, nullable=False)
+
+    unit_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    tax_rate: Decimal = Field(
+        default=Decimal("0.00"),
+        sa_column=Column(Numeric(5, 2), nullable=False),
+    )
+
+    subscription: "Subscription" = Relationship(back_populates="lines")
 

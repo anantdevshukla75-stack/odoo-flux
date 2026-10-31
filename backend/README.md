@@ -46,6 +46,8 @@ The API listens on <http://127.0.0.1:8000>:
 | `/api/v1/auth/*` | Authentication endpoints |
 | `/api/v1/products/*` | Product catalog |
 | `/api/v1/plans/*` | Subscription plans and plan lines |
+| `/api/v1/customers/*` | Customer profiles |
+| `/api/v1/subscriptions/*` | Subscriptions and lifecycle actions |
 | `/docs` | Swagger UI |
 | `/redoc` | ReDoc |
 | `/health` | Health check |
@@ -58,7 +60,7 @@ All application routes are prefixed with `/api/v1`. See [API-Specifications.md](
 uv run python seed.py
 ```
 
-Creates (idempotently) an admin, a staff member, a customer, three demo products, and the "Starter Monthly" plan. The demo password is printed by the script. This is for local development only.
+Creates (idempotently) an admin, a staff member, a customer, three demo products, the "Starter Monthly" plan, and an active demo subscription (`SUB-000001`) for the demo customer. The demo password is printed by the script. This is for local development only.
 
 ## Reset the database
 
@@ -82,20 +84,26 @@ backend/
 │   ├── model.py        # SQLModel tables
 │   ├── auth.py         # Auth persistence (queries, commits)
 │   ├── products.py     # Product persistence
-│   └── plans.py        # Plan + plan line persistence
+│   ├── plans.py        # Plan + plan line persistence
+│   ├── customers.py    # Customer persistence
+│   └── subscriptions.py # Subscription persistence, billing math, lifecycle
 ├── routes/
 │   ├── auth.py         # Auth HTTP endpoints
 │   ├── products.py     # Product HTTP endpoints
 │   ├── plans.py        # Plan HTTP endpoints
+│   ├── customers.py    # Customer HTTP endpoints
+│   ├── subscriptions.py # Subscription HTTP endpoints
 │   └── schemas/
 │       ├── user.py     # Auth request/response models
 │       ├── product.py  # Product request/response models
-│       └── plan.py     # Plan request/response models
+│       ├── plan.py     # Plan request/response models
+│       ├── customer.py # Customer response models
+│       └── subscription.py # Subscription request/response models
 └── helpers/
     └── auth/
         ├── jwt.py      # Access/refresh token creation and decoding
         ├── password.py # Argon2 hashing and OAuth2 scheme
-        └── user.py     # get_current_user / require_admin dependencies
+        └── user.py     # get_current_user / require_admin / require_staff dependencies
 ```
 
 ## Conventions
