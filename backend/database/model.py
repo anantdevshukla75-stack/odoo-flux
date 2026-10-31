@@ -1,45 +1,34 @@
-from sqlmodel import Field, SQLModel
-from typing import Literal
+from datetime import UTC, datetime
 from enum import Enum
-from datetime import datetime, timezone
+
+from sqlmodel import Field, SQLModel
+
 
 class UserRole(str, Enum):
     ADMIN = "admin"
     STAFF = "staff"
     CUSTOMER = "customer"
 
+
 class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: int | None = Field(default=None, primary_key=True)
 
-    email: str = Field(
-        unique=True,
-        index=True,
-        nullable=False
-    )
+    email: str = Field(unique=True, index=True, nullable=False)
 
     password_hash: str = Field(nullable=False)
 
-    full_name: str = Field(
-        unique=True,
-        nullable=False
-    )
+    full_name: str = Field(nullable=False)
 
-    role: UserRole = Field(
-        default=UserRole.CUSTOMER,
-        nullable=False
-    )
+    role: UserRole = Field(default=UserRole.CUSTOMER, nullable=False)
 
-    is_active: bool = Field(
-        default=True,
-        nullable=False
-    )
+    is_active: bool = Field(default=True, nullable=False)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        nullable=False
+        default_factory=lambda: datetime.now(UTC), nullable=False
     )
+
 
 class Customer(SQLModel, table=True):
     __tablename__ = "customers"
@@ -47,10 +36,7 @@ class Customer(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
     user_id: int = Field(
-        foreign_key="users.id",
-        unique=True,
-        nullable=False,
-        index=True
+        foreign_key="users.id", unique=True, nullable=False, index=True
     )
 
     company_name: str | None = Field(default=None, nullable=True)
@@ -62,6 +48,5 @@ class Customer(SQLModel, table=True):
     tax_number: str | None = Field(default=None, nullable=True)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        nullable=False
+        default_factory=lambda: datetime.now(UTC), nullable=False
     )
