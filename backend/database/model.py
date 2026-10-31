@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import Enum
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Column, Numeric
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class UserRole(str, Enum):
@@ -64,3 +66,35 @@ class PasswordResetToken(SQLModel, table=True):
     expires_at: datetime = Field(nullable=False)
 
     used_at: datetime | None = Field(default=None, nullable=True)
+
+
+class ProductType(str, Enum):
+    SERVICE = "service"
+    GOODS = "goods"
+    SUBSCRIPTION = "subscription"
+
+
+class Product(SQLModel, table=True):
+    __tablename__ = "products"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    name: str = Field(nullable=False, index=True)
+
+    product_type: ProductType = Field(
+        default=ProductType.SERVICE, nullable=False
+    )
+
+    sales_price: Decimal = Field(
+        sa_column=Column(Numeric(12, 2), nullable=False)
+    )
+
+    cost_price: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+
+    notes: str | None = Field(default=None, nullable=True)
+
+    is_active: bool = Field(default=True, nullable=False)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), nullable=False
+    )
