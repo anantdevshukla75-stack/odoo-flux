@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** Authentication, Products, Plans, Customers, Subscriptions, Invoices, Billing, and Payments are implemented. Remaining modules will follow the same `/api/v1` prefix.
+> **Implementation status:** Authentication, Products, Plans, Customers, Subscriptions, Invoices, Billing, Payments, and the Dashboard summary are implemented. Remaining modules will follow the same `/api/v1` prefix.
 
 ## Conventions
 
@@ -864,6 +864,47 @@ Customers only see payments belonging to their own invoices.
 | `404` | Invoice not found |
 | `422` | Validation failed (non-positive amount, unknown method, etc.) |
 
+## Dashboard
+
+`GET /dashboard/summary` · Bearer, role `staff` or `admin` · `200`
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `as_of` | date | today | Reference date used to decide which invoices are overdue |
+
+`DashboardSummaryResponse`
+
+```json
+{
+  "as_of": "2026-10-31",
+  "active_subscriptions": 1,
+  "total_invoiced": "148.00",
+  "total_collected": "148.00",
+  "outstanding_amount": "0.00",
+  "overdue_invoices": 0,
+  "overdue_amount": "0.00"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `as_of` | date | Date the figures were computed for |
+| `active_subscriptions` | integer | Subscriptions with status `active` |
+| `total_invoiced` | decimal string | Sum of `total_amount` for `confirmed`, `partially_paid`, and `paid` invoices |
+| `total_collected` | decimal string | Sum of payments recorded against those invoices |
+| `outstanding_amount` | decimal string | `total_invoiced - total_collected` |
+| `overdue_invoices` | integer | `confirmed`/`partially_paid` invoices past `due_date` with a remaining balance |
+| `overdue_amount` | decimal string | Unpaid balance of those overdue invoices |
+
+Draft and cancelled invoices are excluded from every total. Customers receive `403`; the dashboard is internal.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Summary returned |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `422` | Invalid `as_of` |
+
 ## JWT
 
 Access token payload:
@@ -907,4 +948,3 @@ The remaining modules from [PRD §9](PRD.md#9-api-endpoints) are not implemented
 - Product variants
 - Quotation templates
 - Taxes and discounts
-- Dashboard summary
