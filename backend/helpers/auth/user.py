@@ -53,3 +53,12 @@ def require_admin(
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
     return current_user
+
+
+def require_staff(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    if current_user.role not in (UserRole.ADMIN, UserRole.STAFF):
+        raise HTTPException(status_code=403, detail="Staff privileges required")
+
+    return current_user
