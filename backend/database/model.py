@@ -31,6 +31,8 @@ class User(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC), nullable=False
     )
 
+    customer: "Customer" = Relationship(back_populates="user")
+
 
 class Customer(SQLModel, table=True):
     __tablename__ = "customers"
@@ -52,6 +54,8 @@ class Customer(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), nullable=False
     )
+
+    user: "User" = Relationship(back_populates="customer")
 
 
 class PasswordResetToken(SQLModel, table=True):
