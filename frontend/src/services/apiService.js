@@ -9,6 +9,7 @@
  */
 
 import apiClient from './apiClient.js';
+import { formatDate } from '../utils/formatDate.js';
 
 const toNumber = (value) => (value === null || value === undefined ? 0 : Number(value));
 const toUpper = (value) => String(value || '').toUpperCase();
@@ -164,6 +165,7 @@ function normalizeSubscription(subscription, { planById = new Map(), customerByI
     (total, line) => total + toNumber(line.unit_price) * (line.quantity || 0),
     0
   );
+  const termsDays = subscription.payment_terms_days || 0;
 
   return {
     id: subscription.id,
@@ -176,8 +178,9 @@ function normalizeSubscription(subscription, { planById = new Map(), customerByI
     startDate: subscription.start_date,
     expiryDate: subscription.expiry_date,
     nextBillingDate: subscription.next_billing_date,
-    paymentTermsDays: subscription.payment_terms_days,
-    recurringAmount: lineTotal || planTotal,
+    paymentTermsDays: termsDays,
+    paymentTerms: termsDays > 0 ? `Net ${termsDays} Days` : 'Due on receipt',
+    recurringAmount: lines.length > 0 ? lineTotal : planTotal,
     billingInterval: toUpper(plan?.billing_interval || 'MONTHLY'),
     autoRenew: plan?.allow_renewal ?? true,
     createdAt: subscription.created_at,
@@ -208,16 +211,22 @@ function isOverdue(invoice, balance) {
   return new Date(invoice.due_date) < new Date(todayIso());
 }
 
-function normalizeInvoice(invoice, { customerById = new Map(), paidByInvoice = new Map() } = {}) {
+function normalizeInvoice(
+  invoice,
+  { customerById = new Map(), paidByInvoice = new Map(), subscriptionById = new Map() } = {}
+) {
   const paidAmount = paidByInvoice.get(invoice.id) || 0;
   const totalAmount = toNumber(invoice.total_amount);
-  const balance = Math.max(totalAmount - paidAmount, 0);
+  const payableStatus = ['CONFIRMED', 'PARTIALLY_PAID'].includes(toUpper(invoice.status));
+  const balance = payableStatus ? Math.max(totalAmount - paidAmount, 0) : 0;
   const customer = customerById.get(invoice.customer_id);
+  const subscription = subscriptionById.get(invoice.subscription_id);
 
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoice_number,
     subscriptionId: invoice.subscription_id,
+    subscriptionNumber: subscription?.subscription_number || '',
     customerId: invoice.customer_id,
     customerName: customer ? pickCustomerName(customer) : '',
     status: isOverdue(invoice, balance) ? 'OVERDUE' : toUpper(invoice.status),
@@ -229,7 +238,12 @@ function normalizeInvoice(invoice, { customerById = new Map(), paidByInvoice = n
     balance,
     issueDate: invoice.issue_date,
     dueDate: invoice.due_date,
-    billingPeriod: `${invoice.billing_period_start} - ${invoice.billing_period_end}`,
+    billingPeriodStart: invoice.billing_period_start,
+    billingPeriodEnd: invoice.billing_period_end,
+    billingPeriod:
+      invoice.billing_period_start && invoice.billing_period_end
+        ? `${formatDate(invoice.billing_period_start)} – ${formatDate(invoice.billing_period_end)}`
+        : '',
     createdAt: invoice.created_at,
     items: (invoice.lines || []).map((line) => ({
       id: line.id,
@@ -237,7 +251,8 @@ function normalizeInvoice(invoice, { customerById = new Map(), paidByInvoice = n
       description: line.description,
       quantity: line.quantity,
       unitPrice: toNumber(line.unit_price),
-      taxRate: toNumber(line.tax_amount),
+      taxAmount: toNumber(line.tax_amount),
+      discountAmount: toNumber(line.discount_amount),
       amount: toNumber(line.line_total)
     }))
   };
@@ -259,6 +274,198 @@ function normalizePayment(payment, invoiceById = new Map()) {
     paymentDate: payment.payment_date,
     status: 'COMPLETED'
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Subscriptions                                                              */
+/* -------------------------------------------------------------------------- */
+
+async function subscriptionLookups() {
+  const [customers, plans] = await Promise.all([
+    rawCustomers().catch(() => []),
+    rawPlans()
+  ]);
+
+  return { customerById: indexById(customers), planById: indexById(plans) };
+}
+
+export async function getSubscriptions(filters = {}) {
+  const params = {};
+  if (filters.customerId !== undefined && filters.customerId !== null) {
+    params.customer_id = filters.customerId;
+  }
+  if (filters.status) params.status = String(filters.status).toLowerCase();
+
+  const [subscriptions, lookups] = await Promise.all([
+    rawSubscriptions(params),
+    subscriptionLookups()
+  ]);
+
+  return subscriptions.map((subscription) => normalizeSubscription(subscription, lookups));
+}
+
+export async function getSubscriptionById(id) {
+  const [subscription, lookups] = await Promise.all([
+    apiClient.get(`/subscriptions/${id}`),
+    subscriptionLookups()
+  ]);
+
+  return normalizeSubscription(subscription, lookups);
+}
+
+const SUBSCRIPTION_ACTIONS = {
+  CONFIRMED: 'confirm',
+  ACTIVE: 'activate',
+  PAUSED: 'pause',
+  CLOSED: 'close'
+};
+
+export async function updateSubscriptionStatus(id, status) {
+  const action = SUBSCRIPTION_ACTIONS[toUpper(status)];
+
+  if (!action) {
+    throw new Error(`Unsupported subscription status: ${status}`);
+  }
+
+  await apiClient.post(`/subscriptions/${id}/${action}`);
+  return getSubscriptionById(id);
+}
+
+export async function generateSubscriptionInvoice(subscriptionId) {
+  const created = await apiClient.post('/billing/generate', {
+    subscription_id: Number(subscriptionId)
+  });
+
+  if (!Array.isArray(created) || created.length === 0) {
+    throw new Error('No invoice was generated for this subscription.');
+  }
+
+  return created[0];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Invoices                                                                   */
+/* -------------------------------------------------------------------------- */
+
+async function invoiceLookups() {
+  const [customers, subscriptions, payments] = await Promise.all([
+    rawCustomers().catch(() => []),
+    rawSubscriptions().catch(() => []),
+    rawPayments()
+  ]);
+
+  return {
+    customerById: indexById(customers),
+    subscriptionById: indexById(subscriptions),
+    paidByInvoice: paidAmountsByInvoice(payments)
+  };
+}
+
+export async function getInvoices(filters = {}) {
+  const params = {};
+  const requestedStatus = toUpper(filters.status);
+  if (filters.customerId !== undefined && filters.customerId !== null) {
+    params.customer_id = filters.customerId;
+  }
+  if (filters.subscriptionId !== undefined && filters.subscriptionId !== null) {
+    params.subscription_id = filters.subscriptionId;
+  }
+  // OVERDUE is a UI-derived status; the API only exposes persisted invoice states.
+  if (filters.status && requestedStatus !== 'OVERDUE') {
+    params.status = String(filters.status).toLowerCase();
+  }
+
+  const [invoices, lookups] = await Promise.all([rawInvoices(params), invoiceLookups()]);
+
+  const normalized = invoices.map((invoice) => normalizeInvoice(invoice, lookups));
+  return requestedStatus === 'OVERDUE'
+    ? normalized.filter((invoice) => invoice.status === 'OVERDUE')
+    : normalized;
+}
+
+export async function getInvoiceById(id) {
+  const [invoice, lookups] = await Promise.all([apiClient.get(`/invoices/${id}`), invoiceLookups()]);
+  return normalizeInvoice(invoice, lookups);
+}
+
+export async function getInvoiceDetails(id) {
+  const invoice = await apiClient.get(`/invoices/${id}`);
+
+  const [customer, subscription, payments, plans] = await Promise.all([
+    apiClient.get(`/customers/${invoice.customer_id}`),
+    apiClient.get(`/subscriptions/${invoice.subscription_id}`),
+    rawPayments({ invoice_id: invoice.id }),
+    rawPlans()
+  ]);
+
+  const subscriptionById = new Map([[invoice.subscription_id, subscription]]);
+  const invoiceById = new Map([[invoice.id, invoice]]);
+  const normalizedInvoice = normalizeInvoice(invoice, {
+    customerById: new Map([[customer.id, customer]]),
+    subscriptionById,
+    paidByInvoice: paidAmountsByInvoice(payments)
+  });
+
+  return {
+    invoice: normalizedInvoice,
+    customer: normalizeCustomer(customer),
+    subscription: normalizeSubscription(subscription, {
+      planById: indexById(plans),
+      customerById: new Map([[customer.id, customer]])
+    }),
+    payments: payments.map((payment) => normalizePayment(payment, invoiceById))
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Payments                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export async function getPayments(filters = {}) {
+  const params = {};
+  if (filters.invoiceId !== undefined && filters.invoiceId !== null) {
+    params.invoice_id = filters.invoiceId;
+  }
+  if (filters.paymentMethod) {
+    params.payment_method = String(filters.paymentMethod).toLowerCase();
+  }
+
+  const [payments, invoices, customers] = await Promise.all([
+    rawPayments(params),
+    rawInvoices(),
+    rawCustomers().catch(() => [])
+  ]);
+
+  const invoiceById = indexById(invoices);
+  const customerById = indexById(customers);
+
+  return payments.map((payment) => {
+    const normalized = normalizePayment(payment, invoiceById);
+    const customer = customerById.get(normalized.customerId);
+    normalized.customerName = customer ? pickCustomerName(customer) : '';
+    return normalized;
+  });
+}
+
+export async function recordPayment(data) {
+  const body = {
+    invoice_id: Number(data.invoiceId),
+    payment_method: String(data.paymentMethod || 'bank_transfer').toLowerCase(),
+    amount: toNumber(data.amount),
+    reference: data.reference || null,
+    note: data.note || null
+  };
+
+  if (data.paymentDate) {
+    body.payment_date =
+      String(data.paymentDate).length === 10
+        ? `${data.paymentDate}T12:00:00Z`
+        : data.paymentDate;
+  }
+
+  const created = await apiClient.post('/payments', body);
+  const invoices = await rawInvoices();
+  return normalizePayment(created, indexById(invoices));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -315,12 +522,13 @@ export async function getCustomerDetails(id) {
 
   const planById = indexById(plans);
   const customerById = indexById(allCustomers);
+  const subscriptionById = indexById(rawSubs);
   const invoiceIds = new Set(rawInvoices_.map((inv) => inv.id));
   const customerPayments = payments.filter((payment) => invoiceIds.has(payment.invoice_id));
 
   const paidByInvoice = paidAmountsByInvoice(customerPayments);
   const invoices = rawInvoices_.map((inv) =>
-    normalizeInvoice(inv, { customerById, paidByInvoice })
+    normalizeInvoice(inv, { customerById, paidByInvoice, subscriptionById })
   );
   const subscriptions = rawSubs.map((sub) =>
     normalizeSubscription(sub, { planById, customerById })
@@ -469,7 +677,16 @@ export const apiService = {
   getPlanById,
   createPlan,
   updatePlan,
-  togglePlanStatus
+  togglePlanStatus,
+  getSubscriptions,
+  getSubscriptionById,
+  updateSubscriptionStatus,
+  generateSubscriptionInvoice,
+  getInvoices,
+  getInvoiceById,
+  getInvoiceDetails,
+  getPayments,
+  recordPayment
 };
 
 export default apiService;

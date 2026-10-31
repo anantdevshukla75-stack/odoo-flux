@@ -1,33 +1,30 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Receipt, DollarSign, Download, Filter, Eye, Printer, AlertTriangle } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/useAuth.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export function Invoices({ basePath = '/admin/invoices' }) {
   const navigate = useNavigate();
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
 
-  const loadInvoices = useCallback(async () => {
-    let list = await mockDataService.getInvoices();
-    if (role === 'CUSTOMER') {
-      const custId = user?.customerId || user?.id || 'cust-001';
-      list = list.filter(i => i.customerId === custId);
-    }
+  const loadInvoices = async () => {
+    // The API scopes customer accounts to their own invoices.
+    const list = await apiService.getInvoices();
     setInvoices(list);
-  }, [role, user]);
+  };
 
   useEffect(() => {
-    loadInvoices();
-  }, [loadInvoices]);
+    loadInvoices().catch(() => setInvoices([]));
+  }, [role]);
 
   // Display status filter support: Draft, Confirmed, Partially paid, Paid, Overdue, Cancelled
   const filteredInvoices = filterStatus === 'ALL'
@@ -76,7 +73,7 @@ export function Invoices({ basePath = '/admin/invoices' }) {
       header: 'Subscription',
       render: (row) => (
         <span className="text-xs font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-          {row.subscriptionId || 'One-Off / Adhoc'}
+          {row.subscriptionNumber || 'One-Off / Adhoc'}
         </span>
       )
     },

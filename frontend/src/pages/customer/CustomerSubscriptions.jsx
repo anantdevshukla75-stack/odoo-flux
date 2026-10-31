@@ -1,61 +1,45 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   RefreshCw,
-  Pause,
-  Play,
-  RotateCw,
-  XCircle,
   Eye,
-  Calendar,
-  Layers,
-  Receipt,
-  CheckCircle2,
-  AlertCircle,
-  ShieldCheck,
-  ChevronRight
+  Calendar
 } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
-import { useAuth } from '../../context/useAuth.js';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerSubscriptions() {
-  const { user } = useAuth();
   const [subscriptions, setSubscriptions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [selectedSub, setSelectedSub] = useState(null);
   const [subInvoices, setSubInvoices] = useState([]);
   const [subProducts, setSubProducts] = useState([]);
   const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW' | 'PRODUCTS' | 'BILLING'
-  const [feedback, setFeedback] = useState(null);
 
-  const customerId = user?.customerId || user?.id || 'cust-001';
-
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     const [sList, pList] = await Promise.all([
-      mockDataService.getSubscriptions({ customerId }),
-      mockDataService.getPlans()
+      apiService.getSubscriptions(),
+      apiService.getPlans()
     ]);
     setSubscriptions(sList);
     setPlans(pList);
-  }, [customerId]);
+  };
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, []);
 
   const handleOpenDetails = async (sub) => {
     setSelectedSub(sub);
     setActiveTab('OVERVIEW');
 
     // Load related invoices
-    const allInvoices = await mockDataService.getInvoices({ customerId });
-    const relatedInv = allInvoices.filter(i => i.subscriptionId === sub.id || i.subscriptionId === sub.subscriptionNumber);
+    const relatedInv = await apiService.getInvoices({ subscriptionId: sub.id });
     setSubInvoices(relatedInv);
 
     // Find plan products
@@ -63,50 +47,7 @@ export function CustomerSubscriptions() {
     if (plan && plan.products) {
       setSubProducts(plan.products);
     } else {
-      setSubProducts([
-        { productName: sub.planName, quantity: 1, unitPrice: sub.recurringAmount }
-      ]);
-    }
-  };
-
-  const handleAction = async (actionType) => {
-    if (!selectedSub) return;
-    const plan = plans.find(p => p.id === selectedSub.planId || p.name === selectedSub.planName);
-
-    try {
-      if (actionType === 'PAUSE') {
-        if (plan && plan.allowPause === false) {
-          alert('This plan agreement does not allow temporary suspension.');
-          return;
-        }
-        await mockDataService.updateSubscriptionStatus(selectedSub.id, 'PAUSED');
-        setFeedback('Subscription paused in demonstration state.');
-      } else if (actionType === 'RESUME') {
-        await mockDataService.updateSubscriptionStatus(selectedSub.id, 'ACTIVE');
-        setFeedback('Subscription resumed in demonstration state.');
-      } else if (actionType === 'RENEW') {
-        const nextDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const subs = mockDataService._get('bl_subscriptions');
-        const idx = subs.findIndex(s => s.id === selectedSub.id);
-        if (idx !== -1) {
-          subs[idx].nextBillingDate = nextDate;
-          mockDataService._set('bl_subscriptions', subs);
-        }
-        setFeedback(`Subscription term renewed. Next billing date extended to ${formatDate(nextDate)}.`);
-      } else if (actionType === 'CLOSE') {
-        if (window.confirm('Are you sure you want to cancel and close this subscription?')) {
-          await mockDataService.updateSubscriptionStatus(selectedSub.id, 'CLOSED');
-          setFeedback('Subscription closed in demonstration state.');
-        }
-      }
-
-      await loadData();
-      // Re-fetch updated selected sub
-      const updated = await mockDataService.getSubscriptionById(selectedSub.id);
-      setSelectedSub(updated);
-      setTimeout(() => setFeedback(null), 5000);
-    } catch (err) {
-      alert(err.message);
+      setSubProducts([]);
     }
   };
 
@@ -116,24 +57,8 @@ export function CustomerSubscriptions() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <PageHeader
         title="My Subscriptions"
-        description="Manage your active software subscriptions, review recurring billing schedules, and self-service lifecycle settings."
+        description="Review your active software subscriptions, recurring billing schedules, and contract history."
       />
-
-      {feedback && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{feedback}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFeedback(null)}
-            className="text-emerald-700 font-bold ml-2 cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Subscriptions Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -193,7 +118,7 @@ export function CustomerSubscriptions() {
                         icon={Eye}
                         onClick={() => handleOpenDetails(sub)}
                       >
-                        Manage
+                        Details
                       </Button>
                     </td>
                   </tr>
@@ -301,7 +226,13 @@ export function CustomerSubscriptions() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {subProducts.map((p, idx) => (
+                      {subProducts.length === 0 ? (
+                        <tr key="empty">
+                          <td colSpan={3} className="p-4 text-center text-slate-400">
+                            Plan line details are unavailable.
+                          </td>
+                        </tr>
+                      ) : subProducts.map((p, idx) => (
                         <tr key={idx}>
                           <td className="p-2 font-medium text-slate-900">{p.productName}</td>
                           <td className="p-2 text-center">{p.quantity}</td>
@@ -355,62 +286,14 @@ export function CustomerSubscriptions() {
               </div>
             )}
 
-            {/* Self-Service Actions Strip */}
+            {/* Lifecycle changes are staff-managed by the current backend. */}
             <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-500">
+                To change or cancel this subscription, contact your account representative.
+              </p>
               <Button variant="secondary" onClick={() => setSelectedSub(null)}>
                 Close
               </Button>
-
-              <div className="flex items-center gap-2">
-                {/* Pause Action: Allowed if status === ACTIVE and plan allows pause */}
-                {selectedSub.status === 'ACTIVE' && planOfSelected?.allowPause !== false && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={Pause}
-                    onClick={() => handleAction('PAUSE')}
-                  >
-                    Pause Subscription
-                  </Button>
-                )}
-
-                {/* Resume Action: Allowed if status === PAUSED */}
-                {selectedSub.status === 'PAUSED' && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={Play}
-                    onClick={() => handleAction('RESUME')}
-                  >
-                    Resume Subscription
-                  </Button>
-                )}
-
-                {/* Renew Action: Allowed if status !== CLOSED and plan allows renewal */}
-                {selectedSub.status !== 'CLOSED' && planOfSelected?.allowRenewal !== false && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={RotateCw}
-                    onClick={() => handleAction('RENEW')}
-                  >
-                    Renew Term
-                  </Button>
-                )}
-
-                {/* Close Action: Allowed if status !== CLOSED */}
-                {selectedSub.status !== 'CLOSED' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={XCircle}
-                    onClick={() => handleAction('CLOSE')}
-                    className="text-rose-600 hover:bg-rose-50"
-                  >
-                    Cancel Plan
-                  </Button>
-                )}
-              </div>
             </div>
           </div>
         )}

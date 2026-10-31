@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, ShieldCheck } from 'lucide-react';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 import Button from '../../components/common/Button.jsx';
@@ -17,17 +17,13 @@ export function InvoicePrint() {
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      const inv = await mockDataService.getInvoiceById(invoiceId);
-      if (inv) {
-        setInvoice(inv);
-        if (inv.customerId) {
-          const cust = await mockDataService.getCustomerById(inv.customerId);
-          setCustomer(cust);
-        }
-        if (inv.subscriptionId) {
-          const sub = await mockDataService.getSubscriptionById(inv.subscriptionId);
-          setSubscription(sub);
-        }
+      try {
+        const details = await apiService.getInvoiceDetails(invoiceId);
+        setInvoice(details.invoice);
+        setCustomer(details.customer);
+        setSubscription(details.subscription);
+      } catch {
+        setInvoice(null);
       }
       setLoading(false);
     }
@@ -52,16 +48,7 @@ export function InvoicePrint() {
     );
   }
 
-  const items = invoice.items || [
-    {
-      id: 'default-1',
-      description: subscription?.planName || 'Brightloop Enterprise Cloud Platform Access',
-      quantity: 1,
-      unitPrice: invoice.subtotal || (invoice.totalAmount * 0.85),
-      taxRate: 18,
-      amount: invoice.subtotal || (invoice.totalAmount * 0.85)
-    }
-  ];
+  const items = invoice.items || [];
 
   return (
     <div className="min-h-screen bg-slate-100 print:bg-white p-4 sm:p-8 flex flex-col items-center">
@@ -105,16 +92,13 @@ export function InvoicePrint() {
               </span>
             </div>
             <div className="text-xs text-slate-600 leading-relaxed">
-              Brightloop Cloud Technologies, Inc.<br />
-              100 Innovation Way, Suite 400<br />
-              San Francisco, CA 94105, United States<br />
-              Tax ID / EIN: US-8829104-X | VAT ID: EU-99238411
+              Subscription and billing management
             </div>
           </div>
 
           <div className="text-right">
             <h1 className="text-2xl font-black uppercase tracking-wider text-slate-950 m-0">
-              TAX INVOICE
+              INVOICE
             </h1>
             <div className="text-base font-bold font-mono text-slate-900 mt-1">
               {invoice.invoiceNumber}
@@ -140,16 +124,15 @@ export function InvoicePrint() {
               {customer?.companyName || invoice.customerName}
             </div>
             <div className="text-xs text-slate-700 mt-0.5">
-              Attn: {customer?.name || invoice.customerName}
+              Attn: {customer?.fullName || invoice.customerName}
             </div>
             <div className="text-xs text-slate-600 leading-relaxed mt-1">
-              {customer?.billingAddress?.street || '742 Evergreen Terrace'}<br />
-              {customer?.billingAddress?.city || 'San Francisco'}, {customer?.billingAddress?.state || 'CA'} {customer?.billingAddress?.zip || '94107'}<br />
-              Email: {customer?.email || 'billing@acme.com'} | Phone: {customer?.phone || '+1 (555) 234-5678'}
+              {customer?.billingAddress || 'Billing address not provided'}<br />
+              Email: {customer?.email || '—'} | Phone: {customer?.phone || '—'}
             </div>
             {customer?.taxId && (
               <div className="text-xs text-slate-600 mt-1">
-                <strong>Tax Registration / VAT:</strong> {customer.taxId}
+                <strong>Tax ID:</strong> {customer.taxId}
               </div>
             )}
           </div>
@@ -161,7 +144,7 @@ export function InvoicePrint() {
             <div className="text-xs text-slate-700 space-y-1">
               <div>
                 <span className="font-semibold text-slate-900">Subscription Ref:</span>{' '}
-                <span className="font-mono">{invoice.subscriptionId || 'One-Off Contract'}</span>
+                <span className="font-mono">{subscription?.subscriptionNumber || '—'}</span>
               </div>
               {subscription && (
                 <>
@@ -170,7 +153,7 @@ export function InvoicePrint() {
                   <div><span className="font-semibold text-slate-900">Term:</span> {formatDate(subscription.startDate)} to {formatDate(subscription.nextBillingDate)}</div>
                 </>
               )}
-              <div><span className="font-semibold text-slate-900">Payment Terms:</span> Net 15 Days from issuance</div>
+              <div><span className="font-semibold text-slate-900">Payment Terms:</span> {subscription?.paymentTerms || 'Due on receipt'}</div>
             </div>
           </div>
         </div>
@@ -192,13 +175,10 @@ export function InvoicePrint() {
                 <tr key={idx}>
                   <td className="py-3 pr-2">
                     <div className="font-bold text-slate-950">{line.description}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      Cloud enterprise multi-region instance, dedicated tenant orchestration
-                    </div>
                   </td>
                   <td className="py-3 text-center text-slate-700 font-medium">{line.quantity}</td>
                   <td className="py-3 text-right text-slate-800 font-medium">{formatCurrency(line.unitPrice)}</td>
-                  <td className="py-3 text-center text-slate-600">{line.taxRate || 18}%</td>
+                  <td className="py-3 text-center text-slate-600">{formatCurrency(line.taxAmount || 0)}</td>
                   <td className="py-3 text-right font-bold text-slate-950">{formatCurrency(line.amount || (line.quantity * line.unitPrice))}</td>
                 </tr>
               ))}
@@ -211,7 +191,7 @@ export function InvoicePrint() {
           <div className="w-72 space-y-2 text-xs">
             <div className="flex justify-between text-slate-600">
               <span>Subtotal:</span>
-              <span className="font-semibold text-slate-900">{formatCurrency(invoice.subtotal || (invoice.totalAmount * 0.85))}</span>
+              <span className="font-semibold text-slate-900">{formatCurrency(invoice.subtotal)}</span>
             </div>
             {Number(invoice.discountAmount || 0) > 0 && (
               <div className="flex justify-between text-emerald-700 font-semibold">
@@ -220,8 +200,8 @@ export function InvoicePrint() {
               </div>
             )}
             <div className="flex justify-between text-slate-600">
-              <span>Tax (GST / VAT 18%):</span>
-              <span className="font-semibold text-slate-900">{formatCurrency(invoice.taxAmount || (invoice.totalAmount * 0.15))}</span>
+              <span>Tax:</span>
+              <span className="font-semibold text-slate-900">{formatCurrency(invoice.taxAmount)}</span>
             </div>
             <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t-2 border-slate-900">
               <span>Total Invoiced:</span>
@@ -238,37 +218,12 @@ export function InvoicePrint() {
           </div>
         </div>
 
-        {/* Payment Remittance & Instructions */}
-        <div className="pt-6 border-t border-slate-200 grid grid-cols-2 gap-6 text-[11px] text-slate-600">
-          <div>
-            <div className="font-bold text-slate-800 uppercase tracking-wider mb-1">
-              Bank Wire Remittance Instructions
-            </div>
-            <div className="leading-relaxed">
-              Bank: Silicon Valley Commercial Bank<br />
-              Account Name: Brightloop Software, Inc.<br />
-              Account Number: 9812-4412-0091 | Routing: 121000358<br />
-              SWIFT / BIC: SVBKUS6S<br />
-              Payment Memo Reference: <strong>{invoice.invoiceNumber}</strong>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <div className="font-bold text-slate-800 uppercase tracking-wider mb-1">
-              Questions & Inquiries
-            </div>
-            <div className="leading-relaxed">
-              Email: accounts-receivable@brightloopsoftware.com<br />
-              Phone: +1 (800) 555-LOOP<br />
-              Customer Portal: https://app.brightloopsoftware.com<br />
-              Thank you for choosing Brightloop Software!
-            </div>
-          </div>
+        <div className="pt-6 border-t border-slate-200 text-[11px] text-slate-600">
+          Payment reference: <strong>{invoice.invoiceNumber}</strong>
         </div>
 
-        {/* Legal Disclaimer */}
         <div className="mt-8 pt-4 border-t border-slate-100 text-[10px] text-slate-400 text-center">
-          This is an official computer-generated tax invoice. All cloud software services provided under Brightloop Master Subscription Agreement.
+          Invoice reference: {invoice.invoiceNumber}
         </div>
       </div>
     </div>

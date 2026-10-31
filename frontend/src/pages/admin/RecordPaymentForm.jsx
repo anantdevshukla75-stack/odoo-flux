@@ -4,7 +4,7 @@ import { DollarSign, ShieldAlert, CheckCircle2, AlertCircle, Calendar, Hash, Fil
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function RecordPaymentForm({
@@ -31,35 +31,38 @@ export function RecordPaymentForm({
   useEffect(() => {
     async function loadData() {
       const [custList, invList] = await Promise.all([
-        mockDataService.getCustomers(),
-        mockDataService.getInvoices()
+        apiService.getCustomers(),
+        apiService.getInvoices()
       ]);
       setCustomers(custList);
       setInvoices(invList);
 
       if (initialInvoiceId) {
-        const foundInv = invList.find(i => i.id === initialInvoiceId);
+        const foundInv = invList.find(i => String(i.id) === String(initialInvoiceId));
         if (foundInv) {
           setSelectedInvoice(foundInv);
           setSelectedCustomerId(foundInv.customerId);
           setAmount(foundInv.balance > 0 ? foundInv.balance : foundInv.totalAmount);
           setNote(`Payment settlement for ${foundInv.invoiceNumber}`);
         }
-      } else if (custList.length > 0) {
-        setSelectedCustomerId(prev => prev || custList[0].id);
+      } else if (custList.length > 0 && !initialCustomerId) {
+        setSelectedCustomerId(String(custList[0].id));
       }
     }
     loadData();
-  }, [initialInvoiceId]);
+  }, [initialInvoiceId, initialCustomerId]);
 
   // Filter invoices for chosen customer that have balance > 0 or are not cancelled
   const customerInvoices = invoices.filter(
-    inv => (!selectedCustomerId || inv.customerId === selectedCustomerId) && inv.status !== 'CANCELLED'
+    inv =>
+      (!selectedCustomerId || String(inv.customerId) === String(selectedCustomerId)) &&
+      inv.status !== 'CANCELLED' &&
+      inv.balance > 0
   );
 
   const handleCustomerChange = (cId) => {
     setSelectedCustomerId(cId);
-    const matching = invoices.filter(i => i.customerId === cId && i.balance > 0);
+    const matching = invoices.filter((i) => String(i.customerId) === String(cId) && i.balance > 0);
     if (matching.length > 0) {
       handleInvoiceChange(matching[0].id);
     } else {
@@ -71,7 +74,7 @@ export function RecordPaymentForm({
 
   const handleInvoiceChange = (invId) => {
     setSelectedInvoiceId(invId);
-    const inv = invoices.find(i => i.id === invId);
+    const inv = invoices.find((i) => String(i.id) === String(invId));
     setSelectedInvoice(inv || null);
     if (inv) {
       setAmount(inv.balance > 0 ? inv.balance : inv.totalAmount);
@@ -95,18 +98,18 @@ export function RecordPaymentForm({
       return;
     }
 
-    // Reject demo overpayments
+    // Reject overpayments before submitting; the API also validates outstanding balance.
     const outstanding = Number(selectedInvoice.balance || 0);
     if (payAmount > outstanding + 0.001) {
       setError(
-        `Overpayment Rejected: Entered payment of ${formatCurrency(payAmount)} exceeds current invoice balance of ${formatCurrency(outstanding)}. Partial and exact settlements only in demonstration mode.`
+        `Overpayment rejected: ${formatCurrency(payAmount)} exceeds the current invoice balance of ${formatCurrency(outstanding)}.`
       );
       return;
     }
 
     setLoading(true);
     try {
-      await mockDataService.recordPayment({
+      await apiService.recordPayment({
         invoiceId: selectedInvoice.id,
         invoiceNumber: selectedInvoice.invoiceNumber,
         customerId: selectedInvoice.customerId,
@@ -118,25 +121,25 @@ export function RecordPaymentForm({
         note: note || 'Local demonstration settlement'
       });
 
-      setLoading(false);
       if (onSuccess) {
         onSuccess();
       } else {
         navigate('/admin/payments');
       }
     } catch (err) {
-      setLoading(false);
       setError(err.message || 'Payment recording failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Demo Notice Banner */}
+      {/* Payment processing notice */}
       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
         <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
         <div>
-          <span className="font-bold">Demonstration Transaction Processing:</span> Recording a payment updates local browser data only. Partial payments are supported; overpayments exceeding the invoice balance are strictly rejected.
+          <span className="font-bold">Payment settlement:</span> Payments are recorded on the invoice ledger. Partial payments are supported; overpayments are rejected.
         </div>
       </div>
 
@@ -147,7 +150,7 @@ export function RecordPaymentForm({
           value={selectedCustomerId}
           onChange={(e) => handleCustomerChange(e.target.value)}
           options={customers.map(c => ({
-            value: c.id,
+            value: String(c.id),
             label: `${c.companyName || c.fullName} (${c.email})`
           }))}
           required
@@ -160,7 +163,7 @@ export function RecordPaymentForm({
           options={
             customerInvoices.length > 0
               ? customerInvoices.map(i => ({
-                  value: i.id,
+                  value: String(i.id),
                   label: `${i.invoiceNumber} — Bal: ${formatCurrency(i.balance)} (${i.status})`
                 }))
               : [{ value: '', label: 'No open invoices available for customer' }]

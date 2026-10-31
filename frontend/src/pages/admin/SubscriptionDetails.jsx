@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   RefreshCw,
@@ -18,7 +18,7 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import StatCard from '../../components/common/StatCard.jsx';
 import LoadingState from '../../components/common/LoadingState.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -27,30 +27,27 @@ const STATUS_STEPS = ['DRAFT', 'QUOTATION', 'CONFIRMED', 'ACTIVE', 'CLOSED'];
 export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
   const { subscriptionId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [sub, setSub] = useState(null);
   const [plan, setPlan] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [loadingAction, setLoadingAction] = useState(false);
-
-  const isCustomerView = location.pathname.startsWith('/customer');
+  const [actionError, setActionError] = useState('');
 
   const loadData = useCallback(async () => {
-    const s = await mockDataService.getSubscriptionById(subscriptionId);
-    if (s) {
-      setSub(s);
-      const [p, invList] = await Promise.all([
-        mockDataService.getPlanById(s.planId),
-        mockDataService.getInvoices({ customerId: s.customerId })
-      ]);
-      setPlan(p);
-      setInvoices(invList);
-    }
+    const s = await apiService.getSubscriptionById(subscriptionId);
+    setSub(s);
+
+    const [p, invList] = await Promise.all([
+      apiService.getPlanById(s.planId),
+      apiService.getInvoices({ subscriptionId: s.id })
+    ]);
+    setPlan(p);
+    setInvoices(invList);
   }, [subscriptionId]);
 
   useEffect(() => {
-    loadData();
+    loadData().catch(() => setSub(null));
   }, [loadData]);
 
   if (!sub) {
@@ -58,19 +55,31 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
   }
 
   const handleAction = async (newStatus) => {
+    setActionError('');
     setLoadingAction(true);
-    await mockDataService.updateSubscriptionStatus(sub.id, newStatus);
-    await loadData();
-    setLoadingAction(false);
+
+    try {
+      await apiService.updateSubscriptionStatus(sub.id, newStatus);
+      await loadData();
+    } catch (err) {
+      setActionError(err?.message || 'Could not update the subscription.');
+    } finally {
+      setLoadingAction(false);
+    }
   };
 
   const handleGenerateInvoice = async () => {
+    setActionError('');
     setLoadingAction(true);
-    const inv = await mockDataService.generateSubscriptionInvoice(sub.id);
-    if (inv) {
+
+    try {
+      await apiService.generateSubscriptionInvoice(sub.id);
       await loadData();
+    } catch (err) {
+      setActionError(err?.message || 'Could not generate an invoice for this subscription.');
+    } finally {
+      setLoadingAction(false);
     }
-    setLoadingAction(false);
   };
 
   // Check plan policies
@@ -120,6 +129,18 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
 
         {/* Subscription Lifecycle Action Buttons */}
         <div className="flex items-center gap-2">
+          {(sub.status === 'DRAFT' || sub.status === 'QUOTATION') && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={CheckCircle2}
+              loading={loadingAction}
+              onClick={() => handleAction('CONFIRMED')}
+            >
+              Confirm Subscription
+            </Button>
+          )}
+
           {sub.status === 'CONFIRMED' && (
             <Button
               variant="primary"
@@ -129,18 +150,6 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
               onClick={() => handleAction('ACTIVE')}
             >
               Activate Subscription
-            </Button>
-          )}
-
-          {sub.status === 'ACTIVE' && !isCustomerView && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={Receipt}
-              loading={loadingAction}
-              onClick={handleGenerateInvoice}
-            >
-              Generate Due Invoice
             </Button>
           )}
 
@@ -168,19 +177,19 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
             </Button>
           )}
 
-          {sub.status === 'ACTIVE' && allowRenewal && (
+          {(sub.status === 'CONFIRMED' || sub.status === 'ACTIVE') && (
             <Button
               variant="secondary"
               size="sm"
-              icon={RefreshCw}
+              icon={Receipt}
               loading={loadingAction}
-              onClick={() => alert(`Simulating cycle renewal for ${sub.subscriptionNumber}`)}
+              onClick={handleGenerateInvoice}
             >
-              Renew Cycle
+              Generate Invoice
             </Button>
           )}
 
-          {sub.status !== 'CLOSED' && sub.status !== 'CANCELLED' && allowEarlyClose && (
+          {sub.status !== 'CLOSED' && allowEarlyClose && (
             <Button
               variant="danger"
               size="sm"
@@ -193,6 +202,12 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-medium text-rose-800">
+          {actionError}
+        </div>
+      )}
 
       {/* Subscription Status Lifecycle Timeline */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
