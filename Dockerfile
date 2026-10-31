@@ -25,4 +25,4 @@ RUN uv sync --frozen
 
 # Run migrations then start server
 EXPOSE 8000
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run fastapi run main.py --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run fastapi run main.py --host 0.0.0.0 --port ${PORT:-8000}"]
