@@ -1,3 +1,4 @@
+from config import API_V1_PREFIX
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 
@@ -5,7 +6,7 @@ from pwdlib import PasswordHash
 password_hash = PasswordHash.recommended()
 
 # OAuth2 bearer authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{API_V1_PREFIX}/auth/login")
 
 
 def hash_password(password: str):
