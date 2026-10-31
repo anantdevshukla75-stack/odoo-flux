@@ -23,7 +23,7 @@ import Modal from '../../components/common/Modal.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
 import DiscountForm from './DiscountForm.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -37,6 +37,8 @@ export function Discounts() {
   const [editingDiscount, setEditingDiscount] = useState(null);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [testedDiscount, setTestedDiscount] = useState(null);
+  const [pageError, setPageError] = useState('');
+  const [testing, setTesting] = useState(false);
 
   // Tester Form State
   const [testParams, setTestParams] = useState({
@@ -48,21 +50,26 @@ export function Discounts() {
   const [testResult, setTestResult] = useState(null);
 
   const loadData = useCallback(async () => {
-    const [dList, pList, plList] = await Promise.all([
-      mockDataService.getDiscounts(),
-      mockDataService.getProducts(),
-      mockDataService.getPlans()
-    ]);
-    setDiscounts(dList);
-    setProducts(pList);
-    setPlans(plList);
+    try {
+      const [dList, pList, plList] = await Promise.all([
+        apiService.getDiscounts(),
+        apiService.getProducts(),
+        apiService.getPlans()
+      ]);
+      setDiscounts(dList);
+      setProducts(pList);
+      setPlans(plList);
+      setPageError('');
 
-    setTestParams(prev => {
-      const next = { ...prev };
-      if (pList.length > 0 && !prev.productId) next.productId = pList[0].id;
-      if (plList.length > 0 && !prev.planId) next.planId = plList[0].id;
-      return next;
-    });
+      setTestParams(prev => {
+        const next = { ...prev };
+        if (pList.length > 0 && !prev.productId) next.productId = String(pList[0].id);
+        if (plList.length > 0 && !prev.planId) next.planId = String(plList[0].id);
+        return next;
+      });
+    } catch (err) {
+      setPageError(err?.message || 'Could not load discount data from the API.');
+    }
   }, []);
 
   useEffect(() => {
@@ -80,14 +87,22 @@ export function Discounts() {
   };
 
   const handleToggleStatus = async (id) => {
-    await mockDataService.toggleDiscountStatus(id);
-    await loadData();
+    try {
+      await apiService.toggleDiscountStatus(id);
+      await loadData();
+    } catch (err) {
+      setPageError(err?.message || 'Could not update the discount status.');
+    }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this promotional discount rule?')) {
-      await mockDataService.deleteDiscount(id);
-      await loadData();
+      try {
+        await apiService.deleteDiscount(id);
+        await loadData();
+      } catch (err) {
+        setPageError(err?.message || 'Could not delete this discount.');
+      }
     }
   };
 
@@ -97,32 +112,25 @@ export function Discounts() {
     setIsTesterModalOpen(true);
   };
 
-  const handleRunEligibilityTest = (e) => {
+  const handleRunEligibilityTest = async (e) => {
     e.preventDefault();
     if (!testedDiscount) return;
 
-    const result = mockDataService.checkDiscountEligibility(testedDiscount, {
-      purchaseAmount: parseFloat(testParams.purchaseAmount) || 0,
-      quantity: parseInt(testParams.quantity, 10) || 1,
-      productId: testParams.productId,
-      planId: testParams.planId
-    });
-
-    let savings = 0;
-    if (result.eligible) {
-      const pAmt = parseFloat(testParams.purchaseAmount) || 0;
-      if (testedDiscount.discountType === 'PERCENTAGE') {
-        savings = pAmt * (Number(testedDiscount.value) / 100);
-      } else {
-        savings = Math.min(Number(testedDiscount.value), pAmt);
-      }
+    setTesting(true);
+    try {
+      const result = await apiService.checkDiscountEligibility(testedDiscount, {
+        purchaseAmount: parseFloat(testParams.purchaseAmount) || 0,
+        quantity: parseInt(testParams.quantity, 10) || 1,
+        productId: testParams.productId,
+        planId: testParams.planId
+      });
+      setTestResult(result);
+      setPageError('');
+    } catch (err) {
+      setPageError(err?.message || 'Could not verify discount eligibility.');
+    } finally {
+      setTesting(false);
     }
-
-    setTestResult({
-      ...result,
-      savings,
-      finalTotal: Math.max(0, (parseFloat(testParams.purchaseAmount) || 0) - savings)
-    });
   };
 
   const columns = [
@@ -290,6 +298,12 @@ export function Discounts() {
         </Button>
       </PageHeader>
 
+      {pageError && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {pageError}
+        </div>
+      )}
+
       {/* Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -411,7 +425,7 @@ export function Discounts() {
               <Button type="button" variant="secondary" onClick={() => setIsTesterModalOpen(false)}>
                 Close
               </Button>
-              <Button type="submit" variant="primary" icon={Sparkles}>
+              <Button type="submit" variant="primary" icon={Sparkles} loading={testing}>
                 Verify Eligibility
               </Button>
             </div>

@@ -5,7 +5,7 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function DiscountForm({ initialData, onSave, onCancel, isModal = false }) {
@@ -16,6 +16,7 @@ export function DiscountForm({ initialData, onSave, onCancel, isModal = false })
   const [products, setProducts] = useState([]);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -36,24 +37,26 @@ export function DiscountForm({ initialData, onSave, onCancel, isModal = false })
 
   useEffect(() => {
     async function loadMetadata() {
-      const [prodList, planList] = await Promise.all([
-        mockDataService.getProducts(),
-        mockDataService.getPlans()
-      ]);
-      setProducts(prodList);
-      setPlans(planList);
+      try {
+        const [prodList, planList] = await Promise.all([
+          apiService.getProducts(),
+          apiService.getPlans()
+        ]);
+        setProducts(prodList);
+        setPlans(planList);
 
-      if (initialData) {
-        setFormData({ ...initialData });
-      } else if (discountId) {
-        const d = await mockDataService.getDiscountById(discountId);
-        if (d) {
+        if (initialData) {
+          setFormData({ ...initialData });
+        } else if (discountId) {
+          const discount = await apiService.getDiscountById(discountId);
           setFormData({
-            ...d,
-            applicableProducts: d.applicableProducts || [],
-            applicableSubscriptions: d.applicableSubscriptions || []
+            ...discount,
+            applicableProducts: discount.applicableProducts || [],
+            applicableSubscriptions: discount.applicableSubscriptions || []
           });
         }
+      } catch (err) {
+        setError(err?.message || 'Could not load discount form data.');
       }
     }
     loadMetadata();
@@ -85,6 +88,7 @@ export function DiscountForm({ initialData, onSave, onCancel, isModal = false })
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
 
     const payload = {
@@ -98,23 +102,33 @@ export function DiscountForm({ initialData, onSave, onCancel, isModal = false })
       applicableSubscriptions: formData.applicability === 'SUBSCRIPTION_WIDE' ? formData.applicableSubscriptions : []
     };
 
-    if (isEditing) {
-      const targetId = discountId || initialData?.id;
-      await mockDataService.updateDiscount(targetId, payload);
-    } else {
-      await mockDataService.createDiscount(payload);
-    }
+    try {
+      if (isEditing) {
+        const targetId = discountId || initialData?.id;
+        await apiService.updateDiscount(targetId, payload);
+      } else {
+        await apiService.createDiscount(payload);
+      }
 
-    setLoading(false);
-    if (onSave) {
-      onSave();
-    } else {
-      navigate('/admin/discounts');
+      if (onSave) {
+        onSave();
+      } else {
+        navigate('/admin/discounts');
+      }
+    } catch (err) {
+      setError(err?.message || 'Could not save this discount.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const formBody = (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
       {/* Basic Settings */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4">
         <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">

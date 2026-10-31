@@ -4,16 +4,21 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import TaxForm from './TaxForm.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 
 export function Taxes() {
   const [taxes, setTaxes] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTax, setEditingTax] = useState(null);
+  const [error, setError] = useState('');
 
   const loadTaxes = async () => {
-    const list = await mockDataService.getTaxes();
-    setTaxes(list);
+    try {
+      setTaxes(await apiService.getTaxes());
+      setError('');
+    } catch (err) {
+      setError(err?.message || 'Could not load tax rules from the API.');
+    }
   };
 
   useEffect(() => {
@@ -31,19 +36,27 @@ export function Taxes() {
   };
 
   const handleSaveTax = async (taxData) => {
-    if (editingTax) {
-      await mockDataService.updateTax(editingTax.id, taxData);
-    } else {
-      await mockDataService.createTax(taxData);
+    try {
+      if (editingTax) {
+        await apiService.updateTax(editingTax.id, taxData);
+      } else {
+        await apiService.createTax(taxData);
+      }
+      setIsModalOpen(false);
+      setEditingTax(null);
+      await loadTaxes();
+    } catch (err) {
+      setError(err?.message || 'Could not save this tax rule.');
     }
-    setIsModalOpen(false);
-    setEditingTax(null);
-    loadTaxes();
   };
 
   const handleToggleStatus = async (id) => {
-    await mockDataService.toggleTaxStatus(id);
-    loadTaxes();
+    try {
+      await apiService.toggleTaxStatus(id);
+      await loadTaxes();
+    } catch (err) {
+      setError(err?.message || 'Could not update this tax rule.');
+    }
   };
 
   return (
@@ -60,6 +73,12 @@ export function Taxes() {
           Add Tax Rule
         </Button>
       </PageHeader>
+
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="p-4 sm:px-6 flex items-center justify-between border-b border-slate-100 bg-white">
