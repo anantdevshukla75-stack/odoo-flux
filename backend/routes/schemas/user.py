@@ -13,7 +13,9 @@ class UserCreate(BaseModel):
 
 class UserCreateResponse(BaseModel):
     id: int
-    email: EmailStr
+    # Plain string: response payloads must not re-validate stored addresses,
+    # or reserved/special-use domains (e.g. `@odooflux.local`) fail on read.
+    email: str
     full_name: str
 
     model_config = ConfigDict(from_attributes=True)
