@@ -1,4 +1,5 @@
 import jwt
+from database.auth import get_user_by_id
 from database.db import get_session
 from database.model import User
 from fastapi import Depends, HTTPException
@@ -30,7 +31,7 @@ def get_current_user(
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise credentials_exception
 
-    user = session.get(User, user_id)
+    user = get_user_by_id(session, user_id)
 
     if user is None:
         raise credentials_exception

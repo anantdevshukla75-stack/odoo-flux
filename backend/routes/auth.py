@@ -3,14 +3,22 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from database import db, model
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import Session
+
+from database import db, model
+from database.auth import (
+    EmailAlreadyRegisteredError,
+    create_password_reset_token,
+    create_user,
+    get_password_reset_token,
+    get_user_by_email,
+    get_user_by_id,
+    set_user_password,
+)
 from helpers import auth
 from helpers.auth.jwt import REFRESH_TOKEN_TYPE
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
-
 from routes.schemas import user
 
 router = APIRouter()
@@ -35,28 +43,15 @@ def _to_utc(value: datetime) -> datetime:
     "/register", response_model=user.UserCreateResponse, status_code=201
 )
 def register(data: user.UserCreate, session: Session = Depends(db.get_session)):
-    existing = session.exec(
-        select(model.User).where(model.User.email == data.email)
-    ).first()
-
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    new_user = model.User(
-        email=data.email,
-        full_name=data.full_name,
-        password_hash=auth.hash_password(data.password),
-    )
-
-    session.add(new_user)
-
     try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
+        new_user = create_user(
+            session,
+            email=data.email,
+            full_name=data.full_name,
+            password_hash=auth.hash_password(data.password),
+        )
+    except EmailAlreadyRegisteredError:
         raise HTTPException(status_code=409, detail="Email already registered")
-
-    session.refresh(new_user)
 
     return new_user
 
@@ -66,9 +61,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(db.get_session),
 ):
-    statement = select(model.User).where(model.User.email == form_data.username)
-
-    db_user = session.exec(statement).first()
+    db_user = get_user_by_email(session, form_data.username)
 
     if not db_user or not auth.verify_password(
         form_data.password, db_user.password_hash
@@ -106,7 +99,7 @@ def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    db_user = session.get(model.User, user_id)
+    db_user = get_user_by_id(session, user_id)
 
     if db_user is None:
         raise HTTPException(
@@ -140,34 +133,18 @@ def logout():
 def forgot_password(
     data: user.PasswordResetRequest, session: Session = Depends(db.get_session)
 ):
-    db_user = session.exec(
-        select(model.User).where(model.User.email == data.email)
-    ).first()
+    db_user = get_user_by_email(session, data.email)
 
     if db_user and db_user.is_active:
-        # Invalidate any outstanding reset tokens for this user
-        outstanding = session.exec(
-            select(model.PasswordResetToken).where(
-                model.PasswordResetToken.user_id == db_user.id,
-                model.PasswordResetToken.used_at.is_(None),
-            )
-        ).all()
-
-        for token_row in outstanding:
-            session.delete(token_row)
-
         raw_token = secrets.token_urlsafe(32)
 
-        session.add(
-            model.PasswordResetToken(
-                user_id=db_user.id,
-                token_hash=_hash_token(raw_token),
-                expires_at=datetime.now(UTC)
-                + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
-            )
+        create_password_reset_token(
+            session,
+            user_id=db_user.id,
+            token_hash=_hash_token(raw_token),
+            expires_at=datetime.now(UTC)
+            + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
         )
-
-        session.commit()
 
         # Stub: email delivery is not wired up yet, so raw_token is not exposed.
 
@@ -178,11 +155,7 @@ def forgot_password(
 def reset_password(
     data: user.PasswordReset, session: Session = Depends(db.get_session)
 ):
-    token_row = session.exec(
-        select(model.PasswordResetToken).where(
-            model.PasswordResetToken.token_hash == _hash_token(data.token)
-        )
-    ).first()
+    token_row = get_password_reset_token(session, _hash_token(data.token))
 
     now = datetime.now(UTC)
 
@@ -193,27 +166,17 @@ def reset_password(
     ):
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    db_user = session.get(model.User, token_row.user_id)
+    db_user = get_user_by_id(session, token_row.user_id)
 
     if db_user is None:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-    db_user.password_hash = auth.hash_password(data.new_password)
-
-    # Invalidate every outstanding token for this user
-    outstanding = session.exec(
-        select(model.PasswordResetToken).where(
-            model.PasswordResetToken.user_id == db_user.id,
-            model.PasswordResetToken.used_at.is_(None),
-        )
-    ).all()
-
-    for outstanding_row in outstanding:
-        outstanding_row.used_at = now
-        session.add(outstanding_row)
-
-    session.add(db_user)
-    session.commit()
+    set_user_password(
+        session,
+        db_user=db_user,
+        password_hash=auth.hash_password(data.new_password),
+        now=now,
+    )
 
     return Response(status_code=204)
 
@@ -227,28 +190,15 @@ def staff(
     if current_user.role != model.UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
-    existing = session.exec(
-        select(model.User).where(model.User.email == data.email)
-    ).first()
-
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    new_user = model.User(
-        email=data.email,
-        full_name=data.full_name,
-        password_hash=auth.hash_password(data.password),
-        role=model.UserRole.STAFF,
-    )
-
-    session.add(new_user)
-
     try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
+        new_user = create_user(
+            session,
+            email=data.email,
+            full_name=data.full_name,
+            password_hash=auth.hash_password(data.password),
+            role=model.UserRole.STAFF,
+        )
+    except EmailAlreadyRegisteredError:
         raise HTTPException(status_code=409, detail="Email already registered")
-
-    session.refresh(new_user)
 
     return new_user
