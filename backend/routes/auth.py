@@ -218,6 +218,37 @@ def reset_password(
     return Response(status_code=204)
 
 
-@router.post("/staff")
-def staff():
-    return {"route": "staff"}
+@router.post("/staff", response_model=user.UserCreateResponse, status_code=201)
+def staff(
+    data: user.StaffCreate,
+    session: Session = Depends(db.get_session),
+    current_user: model.User = Depends(auth.get_current_active_user),
+):
+    if current_user.role != model.UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+    existing = session.exec(
+        select(model.User).where(model.User.email == data.email)
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    new_user = model.User(
+        email=data.email,
+        full_name=data.full_name,
+        password_hash=auth.hash_password(data.password),
+        role=model.UserRole.STAFF,
+    )
+
+    session.add(new_user)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    session.refresh(new_user)
+
+    return new_user
