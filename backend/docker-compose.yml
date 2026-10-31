@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # PostgreSQL Database Service
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: brightloop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: brightloop_subscriptions
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d brightloop_subscriptions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - brightloop-network
+
+  # -------------------------------------------------------------
+  # Redis Cache & Message Broker Service
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: brightloop-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - brightloop-network
+
+  # -------------------------------------------------------------
+  # Brightloop Backend API Service
+  # -------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: brightloop-backend
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/brightloop_subscriptions?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: prod_super_secret_jwt_access_token_key_min_32_chars_long
+      JWT_REFRESH_SECRET: prod_super_secret_jwt_refresh_token_key_min_32_chars_long
+      APP_BASE_URL: http://localhost:5000
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - brightloop-network
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  brightloop-network:
+    driver: bridge
