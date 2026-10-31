@@ -8,7 +8,7 @@ import Button from '../../components/common/Button.jsx';
 import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 
 export function Invoices({ basePath = '/admin/invoices' }) {
   const navigate = useNavigate();

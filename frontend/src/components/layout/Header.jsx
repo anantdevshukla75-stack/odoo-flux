@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu, LogOut, ShieldCheck, UserCheck, User } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { ROLES, getRoleBadgeClass } from '../../utils/roleHelpers.js';
 
 const ROLE_ICONS = {

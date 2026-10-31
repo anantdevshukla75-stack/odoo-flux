@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, UserCheck, User, ArrowRight, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { ROLES } from '../../utils/roleHelpers.js';
 import { DEMO_ACCOUNTS } from '../../services/authService.js';
 import Button from '../../components/common/Button.jsx';

@@ -17,7 +17,7 @@ import RecordPaymentForm from './RecordPaymentForm.jsx';
 import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate, formatDateTime } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 
 export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   const { invoiceId } = useParams();
