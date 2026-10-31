@@ -5,7 +5,7 @@ from database.model import User
 from fastapi import Depends, HTTPException
 from sqlmodel import Session
 
-from backend.helpers.auth.password import oauth2_scheme
+from helpers.auth.password import oauth2_scheme
 
 
 def get_current_user(
