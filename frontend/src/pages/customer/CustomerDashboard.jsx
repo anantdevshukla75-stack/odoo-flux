@@ -7,7 +7,6 @@ import {
   CreditCard,
   ArrowRight,
   Calendar,
-  AlertCircle,
   CheckCircle2,
   ExternalLink,
   ShieldCheck,
@@ -16,9 +15,8 @@ import {
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import LoadingState from '../../components/common/LoadingState.jsx';
 import { useAuth } from '../../context/useAuth.js';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -26,39 +24,38 @@ export function CustomerDashboard() {
   const { user } = useAuth();
 
   const [subscriptions, setSubscriptions] = useState([]);
-  const [quotations, setQuotations] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     async function loadCustomerData() {
       setLoading(true);
-      const customerId = user?.customerId || user?.id || 'cust-001';
-      const [sList, qList, iList, pList] = await Promise.all([
-        mockDataService.getSubscriptions({ customerId }),
-        mockDataService.getQuotations({ customerId }),
-        mockDataService.getInvoices({ customerId }),
-        mockDataService.getPayments({ customerId })
-      ]);
+      try {
+        const [sList, iList, pList, profile] = await Promise.all([
+          apiService.getSubscriptions(),
+          apiService.getInvoices(),
+          apiService.getPayments(),
+          apiService.getMyCustomer()
+        ]);
 
-      setSubscriptions(sList);
-      setQuotations(qList);
-      setInvoices(iList);
-      setPayments(pList);
-      setLoading(false);
+        setSubscriptions(sList);
+        setInvoices(iList);
+        setPayments(pList);
+        setCustomer(profile);
+      } catch (error) {
+        setLoadError(error?.message || 'Could not load your account summary.');
+      } finally {
+        setLoading(false);
+      }
     }
     loadCustomerData();
-  }, [user]);
-
-  if (loading) {
-    return <LoadingState message="Loading your customer portal dashboard..." />;
-  }
+  }, []);
 
   const activeSub = subscriptions.find(s => s.status === 'ACTIVE') || subscriptions[0] || null;
-  const pendingQuotes = quotations.filter(q => q.status === 'SENT');
   const outstandingTotal = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Welcome Banner */}
@@ -69,10 +66,10 @@ export function CustomerDashboard() {
             <span>Customer Self-Service Hub</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome back, {user?.fullName || 'Marcus Sterling'}
+            Welcome back, {user?.fullName || 'Customer'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Account portal for <span className="font-semibold text-slate-700">{user?.companyName || 'Acme Technologies Inc.'}</span>. View your active subscriptions, settle invoices, and review service proposals.
+            Account portal for <span className="font-semibold text-slate-700">{customer?.companyName || user?.companyName || 'your business'}</span>. View subscriptions, invoices, and payment history.
           </p>
         </div>
 
@@ -88,27 +85,21 @@ export function CustomerDashboard() {
               to="/customer/invoices"
               className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-xs"
             >
-              Pay Outstanding ({formatCurrency(outstandingTotal)})
+              Review Outstanding ({formatCurrency(outstandingTotal)})
             </Link>
           )}
         </div>
       </div>
 
-      {/* Pending Proposal Alert if available */}
-      {pendingQuotes.length > 0 && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900 gap-3">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Pending Quotation Proposal:</span> You have {pendingQuotes.length} commercial proposal ready for your authorization ({pendingQuotes[0].quotationNumber}).
-            </div>
-          </div>
-          <Link
-            to={`/customer/quotations/${pendingQuotes[0].id}`}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg shrink-0 transition-colors"
-          >
-            Review Quote
-          </Link>
+      {loadError && (
+        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <div className="p-4 rounded-xl bg-white border border-slate-200 text-xs text-slate-500">
+          Loading your account summary…
         </div>
       )}
 
@@ -211,11 +202,8 @@ export function CustomerDashboard() {
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <div className="text-[11px] text-slate-500">Included SLA:</div>
-                  <div className="text-xs font-medium text-slate-800 mt-0.5">
-                    99.99% Uptime Guarantee & 24/7 Priority Support
-                  </div>
+                <div className="pt-2 text-[11px] text-slate-500">
+                  {activeSub.lines?.length || 0} billed plan line items
                 </div>
               </div>
             ) : (
@@ -299,7 +287,7 @@ export function CustomerDashboard() {
           </div>
 
           <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs text-slate-500">
-            <span>Payment receipts and VAT invoices are ready for download.</span>
+            <span>Invoice and payment history is available in the portal.</span>
             <Link to="/customer/payments" className="font-semibold text-slate-700 hover:text-slate-900">
               Payment History →
             </Link>

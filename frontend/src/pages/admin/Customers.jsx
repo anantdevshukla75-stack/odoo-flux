@@ -7,7 +7,7 @@ import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import Input from '../../components/common/Input.jsx';
 import Select from '../../components/common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function Customers({ basePath = '/admin/customers' }) {
@@ -23,14 +23,16 @@ export function Customers({ basePath = '/admin/customers' }) {
   const [newCustomer, setNewCustomer] = useState({
     fullName: '',
     email: '',
+    password: 'Password123!',
     companyName: '',
     phone: '',
     billingAddress: '',
     taxId: ''
   });
+  const [formError, setFormError] = useState('');
 
   const loadCustomers = async () => {
-    const list = await mockDataService.getCustomers();
+    const list = await apiService.getCustomers();
     setCustomers(list);
   };
 
@@ -40,11 +42,21 @@ export function Customers({ basePath = '/admin/customers' }) {
 
   const handleCreateCustomer = async (e) => {
     e.preventDefault();
-    const created = await mockDataService.createCustomer(newCustomer);
+    setFormError('');
+
+    let created;
+    try {
+      created = await apiService.createCustomer(newCustomer);
+    } catch (error) {
+      setFormError(error?.message || 'Could not create the customer account.');
+      return;
+    }
+
     setIsModalOpen(false);
     setNewCustomer({
       fullName: '',
       email: '',
+      password: 'Password123!',
       companyName: '',
       phone: '',
       billingAddress: '',
@@ -222,6 +234,12 @@ export function Customers({ basePath = '/admin/customers' }) {
         title="Add Enterprise Customer Account"
       >
         <form onSubmit={handleCreateCustomer} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700">
+              {formError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <Input
               label="Contact Full Name"
@@ -240,6 +258,20 @@ export function Customers({ basePath = '/admin/customers' }) {
               required
             />
           </div>
+
+          <Input
+            label="Temporary Password"
+            type="text"
+            value={newCustomer.password}
+            onChange={(e) => setNewCustomer({ ...newCustomer, password: e.target.value })}
+            placeholder="Minimum 8 characters"
+            minLength={8}
+            required
+          />
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            The customer signs in with this email and temporary password. Share it securely
+            and ask them to change it after first login.
+          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <Input

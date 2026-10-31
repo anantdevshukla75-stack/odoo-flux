@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, Search, RefreshCw, Filter, Pause, Play, XCircle } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import { useAuth } from '../../context/useAuth.js';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function Subscriptions({ basePath = '/admin/subscriptions' }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, user } = useAuth();
+  const { role } = useAuth();
 
   const [subscriptions, setSubscriptions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,19 +22,15 @@ export function Subscriptions({ basePath = '/admin/subscriptions' }) {
 
   const isCustomer = role === 'CUSTOMER' || location.pathname.startsWith('/customer');
 
-  const loadSubscriptions = useCallback(async () => {
-    const list = await mockDataService.getSubscriptions();
-    if (isCustomer) {
-      const custId = user?.customerId || user?.id || 'cust-001';
-      setSubscriptions(list.filter(s => s.customerId === custId));
-    } else {
-      setSubscriptions(list);
-    }
-  }, [isCustomer, user]);
+  const loadSubscriptions = async () => {
+    // The API already scopes customer accounts to their own contracts.
+    const list = await apiService.getSubscriptions();
+    setSubscriptions(list);
+  };
 
   useEffect(() => {
-    loadSubscriptions();
-  }, [loadSubscriptions]);
+    loadSubscriptions().catch(() => setSubscriptions([]));
+  }, []);
 
   const filteredSubscriptions = useMemo(() => {
     return subscriptions.filter((s) => {

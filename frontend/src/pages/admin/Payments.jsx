@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import {
   CreditCard,
   Plus,
@@ -16,30 +15,27 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import RecordPaymentForm from './RecordPaymentForm.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDateTime, formatDate } from '../../utils/formatDate.js';
 import { useAuth } from '../../context/useAuth.js';
 
-export function Payments({ basePath = '/admin/payments' }) {
-  const { role, user } = useAuth();
+export function Payments() {
+  const { role } = useAuth();
   const [payments, setPayments] = useState([]);
   const [methodFilter, setMethodFilter] = useState('ALL');
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
-  const loadData = useCallback(async () => {
-    let list = await mockDataService.getPayments();
-    if (role === 'CUSTOMER') {
-      const custId = user?.customerId || user?.id || 'cust-001';
-      list = list.filter(p => p.customerId === custId);
-    }
+  const loadData = async () => {
+    // The API scopes customer accounts to their own payment history.
+    const list = await apiService.getPayments();
     setPayments(list);
-  }, [role, user]);
+  };
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [role]);
 
   const filteredPayments = methodFilter === 'ALL'
     ? payments
@@ -75,21 +71,11 @@ export function Payments({ basePath = '/admin/payments' }) {
     },
     {
       header: 'Invoice Number',
-      render: (row) => {
-        const invoiceBasePath = basePath.startsWith('/staff')
-          ? '/staff/invoices'
-          : basePath.startsWith('/customer')
-          ? '/customer/invoices'
-          : '/admin/invoices';
-        return (
-          <Link
-            to={`${invoiceBasePath}/${row.invoiceId}`}
-            className="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors"
-          >
-            {row.invoiceNumber}
-          </Link>
-        );
-      }
+      render: (row) => (
+        <span className="font-mono text-xs font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+          {row.invoiceNumber}
+        </span>
+      )
     },
     {
       header: 'Method',
@@ -188,7 +174,7 @@ export function Payments({ basePath = '/admin/payments' }) {
           <div className="text-2xl font-bold text-blue-700 mt-1">
             {formatCurrency(cardVolume)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">Stripe & customer gateway</div>
+          <div className="text-xs text-slate-500 mt-1">Recorded card settlements</div>
         </div>
       </div>
 

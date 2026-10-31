@@ -1,29 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Printer,
-  Mail,
   DollarSign,
-  CreditCard,
-  Building,
   CheckCircle2,
   AlertCircle,
-  FileText,
-  Calendar,
-  Layers,
   ShieldCheck,
-  Ban,
-  Send,
-  History,
-  Check
+  History
 } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import RecordPaymentForm from './RecordPaymentForm.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate, formatDateTime } from '../../utils/formatDate.js';
 import { useAuth } from '../../context/useAuth.js';
@@ -38,99 +29,46 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   const [subscription, setSubscription] = useState(null);
   const [payments, setPayments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Demo Notification Messages
-  const [demoFeedback, setDemoFeedback] = useState(null);
+  // Feedback banner
+  const [feedback, setFeedback] = useState(null);
 
   // Modals
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
-  const [isCustomerPayModalOpen, setIsCustomerPayModalOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const inv = await mockDataService.getInvoiceById(invoiceId);
-    if (inv) {
-      setInvoice(inv);
-      if (inv.customerId) {
-        const cust = await mockDataService.getCustomerById(inv.customerId);
-        setCustomer(cust);
-      }
-      if (inv.subscriptionId) {
-        const sub = await mockDataService.getSubscriptionById(inv.subscriptionId);
-        setSubscription(sub);
-      }
-      const payList = await mockDataService.getPayments({ invoiceId: inv.id });
-      setPayments(payList);
+    setError('');
+
+    try {
+      const details = await apiService.getInvoiceDetails(invoiceId);
+      setInvoice(details.invoice);
+      setCustomer(details.customer);
+      setSubscription(details.subscription);
+      setPayments(details.payments);
+    } catch (err) {
+      setInvoice(null);
+      setError(err?.message || 'Could not load this invoice.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [invoiceId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const showDemoNotice = (message) => {
-    setDemoFeedback(message);
-    setTimeout(() => setDemoFeedback(null), 5000);
-  };
-
-  // 1. Confirm action (transitions DRAFT -> CONFIRMED)
-  const handleConfirmInvoice = async () => {
-    if (!invoice) return;
-    await mockDataService.updateInvoiceStatus(invoice.id, 'CONFIRMED');
-    await loadData();
-    showDemoNotice('Invoice confirmed and released for billing settlement in local demonstration state.');
-  };
-
-  // 2. Cancel action (transitions to CANCELLED)
-  const handleCancelInvoice = async () => {
-    if (!invoice) return;
-    if (window.confirm('Are you sure you want to cancel this invoice? Its remaining balance will be written off in demo state.')) {
-      await mockDataService.updateInvoiceStatus(invoice.id, 'CANCELLED');
-      await loadData();
-      showDemoNotice('Invoice cancelled in demonstration state.');
-    }
-  };
-
-  // 3. Send action
-  const handleSendInvoice = () => {
-    showDemoNotice(`Demonstration action: Invoice ${invoice.invoiceNumber} marked as sent to customer contact. (Note: No actual external email was dispatched)`);
-  };
-
-  // 4. Print action
+  // Print action
   const handlePrint = () => {
     navigate(`${backPath}/${invoice.id}/print`);
   };
 
-  // 5. Scroll to payment history
+  // Scroll to payment history
   const handleScrollToPayments = () => {
     const el = document.getElementById('payment-history-section');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  // Customer instant pay
-  const handleCustomerPay = async (e) => {
-    e.preventDefault();
-    if (!invoice) return;
-
-    try {
-      await mockDataService.recordPayment({
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        customerId: invoice.customerId,
-        customerName: invoice.customerName,
-        amount: invoice.balance,
-        paymentMethod: 'CARD',
-        reference: `CARD-${Math.floor(100000 + Math.random() * 900000)}`,
-        note: 'Customer self-service online checkout'
-      });
-      setIsCustomerPayModalOpen(false);
-      await loadData();
-      showDemoNotice(`Payment of ${formatCurrency(invoice.balance)} successfully recorded in demo mode.`);
-    } catch (err) {
-      alert(err.message);
     }
   };
 
@@ -148,7 +86,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
         <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
         <h2 className="text-lg font-bold text-slate-900">Invoice Record Not Found</h2>
         <p className="text-slate-500 text-xs mt-1 mb-4">
-          No invoice record matches identifier "{invoiceId}".
+          {error || `No invoice record matches identifier "${invoiceId}".`}
         </p>
         <Button variant="primary" onClick={() => navigate(backPath)}>
           Back to Invoices
@@ -157,16 +95,8 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
     );
   }
 
-  const items = invoice.items || [
-    {
-      id: 'default-1',
-      description: subscription?.planName || 'Brightloop Enterprise Cloud Suite Access',
-      quantity: 1,
-      unitPrice: invoice.subtotal || (invoice.totalAmount * 0.85),
-      taxRate: 18,
-      amount: invoice.subtotal || (invoice.totalAmount * 0.85)
-    }
-  ];
+  const items = invoice.items || [];
+  const paymentTerms = subscription?.paymentTerms || 'Due on receipt';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -182,43 +112,6 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Action: Confirm */}
-          {role !== 'CUSTOMER' && invoice.status === 'DRAFT' && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={Check}
-              onClick={handleConfirmInvoice}
-            >
-              Confirm Invoice
-            </Button>
-          )}
-
-          {/* Action: Send */}
-          {role !== 'CUSTOMER' && invoice.status !== 'CANCELLED' && (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Send}
-              onClick={handleSendInvoice}
-            >
-              Send Invoice
-            </Button>
-          )}
-
-          {/* Action: Cancel */}
-          {role !== 'CUSTOMER' && invoice.status !== 'CANCELLED' && invoice.status !== 'PAID' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={Ban}
-              onClick={handleCancelInvoice}
-              className="text-rose-600 hover:bg-rose-50"
-            >
-              Cancel
-            </Button>
-          )}
-
           {/* Action: Print */}
           <Button
             variant="secondary"
@@ -239,45 +132,40 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
             Payments ({payments.length})
           </Button>
 
-          {/* Action: Collect Payment / Pay Now */}
-          {invoice.balance > 0 && invoice.status !== 'CANCELLED' && (
-            role === 'CUSTOMER' ? (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={CreditCard}
-                onClick={() => setIsCustomerPayModalOpen(true)}
-              >
-                Pay Now ({formatCurrency(invoice.balance)})
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={DollarSign}
-                onClick={() => setIsCollectModalOpen(true)}
-              >
-                Record Payment
-              </Button>
-            )
+          {/* Action: Record Payment (staff only, enforced by the API) */}
+          {invoice.balance > 0 && invoice.status !== 'CANCELLED' && role !== 'CUSTOMER' && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={DollarSign}
+              onClick={() => setIsCollectModalOpen(true)}
+            >
+              Record Payment
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Demo Feedback Notification Banner */}
-      {demoFeedback && (
+      {/* Feedback Notification Banner */}
+      {feedback && (
         <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-950 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span>{demoFeedback}</span>
+            <span>{feedback}</span>
           </div>
           <button
             type="button"
-            onClick={() => setDemoFeedback(null)}
+            onClick={() => setFeedback(null)}
             className="text-indigo-700 hover:text-indigo-900 font-bold ml-2 cursor-pointer"
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {role === 'CUSTOMER' && invoice.balance > 0 && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+          Online payment processing is not available in the portal yet. Contact your account representative to arrange settlement.
         </div>
       )}
 
@@ -328,16 +216,13 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
               </span>
             </div>
             <div className="text-xs text-slate-500 leading-relaxed">
-              Brightloop Cloud Technologies, Inc.<br />
-              100 Innovation Way, Suite 400<br />
-              San Francisco, CA 94105, USA<br />
-              Tax ID / EIN: US-8829104-X | VAT ID: EU-99238411
+              Subscription and billing management
             </div>
           </div>
 
           <div className="text-left sm:text-right">
             <h1 className="text-xl font-extrabold uppercase tracking-wider text-slate-900 m-0">
-              Tax Invoice
+              Invoice
             </h1>
             <div className="text-base font-bold font-mono text-indigo-600 mt-0.5">
               {invoice.invoiceNumber}
@@ -348,7 +233,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
               {invoice.billingPeriod && (
                 <div><span className="font-semibold text-slate-700">Billing Period:</span> {invoice.billingPeriod}</div>
               )}
-              <div><span className="font-semibold text-slate-700">Terms:</span> Net 15 Days</div>
+              <div><span className="font-semibold text-slate-700">Terms:</span> {paymentTerms}</div>
             </div>
           </div>
         </div>
@@ -363,12 +248,11 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
               {customer?.companyName || invoice.customerName}
             </div>
             <div className="text-slate-700 mt-0.5 font-medium">
-              Attn: {customer?.name || invoice.customerName}
+              Attn: {customer?.fullName || invoice.customerName}
             </div>
             <div className="text-slate-600 mt-1 leading-relaxed">
-              {customer?.billingAddress?.street || '742 Evergreen Terrace'}<br />
-              {customer?.billingAddress?.city || 'San Francisco'}, {customer?.billingAddress?.state || 'CA'} {customer?.billingAddress?.zip || '94107'}<br />
-              Email: {customer?.email || 'billing@acme.com'} | Phone: {customer?.phone || '+1 (555) 234-5678'}
+              {customer?.billingAddress || 'Billing address not provided'}<br />
+              Email: {customer?.email || '—'} | Phone: {customer?.phone || '—'}
             </div>
             {customer?.taxId && (
               <div className="text-slate-600 mt-1 font-medium">
@@ -384,7 +268,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
             <div className="text-slate-700 space-y-1">
               <div>
                 <span className="font-semibold text-slate-900">Linked Subscription:</span>{' '}
-                <span className="font-mono text-indigo-700">{invoice.subscriptionId || 'One-Off Billing'}</span>
+                <span className="font-mono text-indigo-700">{invoice.subscriptionNumber || '—'}</span>
               </div>
               {subscription && (
                 <>
@@ -397,7 +281,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
 
             <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Certified Brightloop Digital Invoice</span>
+              <span>Invoice record</span>
             </div>
           </div>
         </div>
@@ -410,7 +294,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
                 <th className="py-2.5 font-semibold">Product Line</th>
                 <th className="py-2.5 text-center font-semibold">Quantity</th>
                 <th className="py-2.5 text-right font-semibold">Unit Price</th>
-                <th className="py-2.5 text-center font-semibold">Tax Rate</th>
+                <th className="py-2.5 text-right font-semibold">Tax</th>
                 <th className="py-2.5 text-right font-semibold">Line Amount</th>
               </tr>
             </thead>
@@ -419,13 +303,10 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
                 <tr key={idx}>
                   <td className="py-3 pr-2">
                     <div className="font-semibold text-slate-900">{line.description}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      Cloud managed subscription software service tier
-                    </div>
                   </td>
                   <td className="py-3 text-center text-slate-700">{line.quantity}</td>
                   <td className="py-3 text-right text-slate-700 font-mono">{formatCurrency(line.unitPrice)}</td>
-                  <td className="py-3 text-center text-slate-600">{line.taxRate || 18}%</td>
+                  <td className="py-3 text-right text-slate-600">{formatCurrency(line.taxAmount || 0)}</td>
                   <td className="py-3 text-right font-bold text-slate-900 font-mono">
                     {formatCurrency(line.amount || (line.quantity * line.unitPrice))}
                   </td>
@@ -441,7 +322,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
             <div className="flex justify-between text-slate-600">
               <span>Subtotal:</span>
               <span className="font-semibold text-slate-900 font-mono">
-                {formatCurrency(invoice.subtotal || (invoice.totalAmount * 0.85))}
+                {formatCurrency(invoice.subtotal)}
               </span>
             </div>
             {Number(invoice.discountAmount || 0) > 0 && (
@@ -451,9 +332,9 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
               </div>
             )}
             <div className="flex justify-between text-slate-600">
-              <span>Tax (GST / VAT 18%):</span>
+              <span>Tax:</span>
               <span className="font-semibold text-slate-900 font-mono">
-                {formatCurrency(invoice.taxAmount || (invoice.totalAmount * 0.15))}
+                {formatCurrency(invoice.taxAmount)}
               </span>
             </div>
             <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
@@ -475,17 +356,8 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
           </div>
         </div>
 
-        {/* Remittance Information */}
-        <div className="pt-6 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-500">
-          <div>
-            <div className="font-semibold text-slate-700 mb-1">Bank Remittance Wire Details</div>
-            <div>Silicon Valley Commercial Bank | Routing: 121000358</div>
-            <div>Account: 9812-4412-0091 (Brightloop Software Inc.) | SWIFT: SVBKUS6S</div>
-          </div>
-          <div className="sm:text-right">
-            <div className="font-semibold text-slate-700 mb-1">Customer Support</div>
-            <div>accounts-receivable@brightloopsoftware.com | +1 (800) 555-LOOP</div>
-          </div>
+        <div className="pt-6 border-t border-slate-200 text-xs text-slate-500">
+          Invoice reference: <span className="font-mono font-semibold">{invoice.invoiceNumber}</span>
         </div>
       </div>
 
@@ -496,7 +368,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
             <h3 className="text-sm font-bold text-slate-900">Reconciled Payment History</h3>
             <p className="text-xs text-slate-500">Transactions credited toward {invoice.invoiceNumber}</p>
           </div>
-          {invoice.balance > 0 && role !== 'CUSTOMER' && (
+          {invoice.balance > 0 && invoice.status !== 'CANCELLED' && role !== 'CUSTOMER' && (
             <Button
               variant="secondary"
               size="sm"
@@ -557,90 +429,13 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
         <RecordPaymentForm
           initialInvoiceId={invoice.id}
           initialCustomerId={invoice.customerId}
-          onSuccess={() => {
+          onSuccess={async () => {
             setIsCollectModalOpen(false);
-            loadData();
-            showDemoNotice('Payment posted successfully and invoice balance updated in demo state.');
+            await loadData();
+            setFeedback('Payment recorded and invoice balance updated.');
           }}
           onCancel={() => setIsCollectModalOpen(false)}
         />
-      </Modal>
-
-      {/* Customer Pay Now Modal */}
-      <Modal
-        isOpen={isCustomerPayModalOpen}
-        onClose={() => setIsCustomerPayModalOpen(false)}
-        title="Secure Customer Invoice Checkout"
-      >
-        <form onSubmit={handleCustomerPay} className="space-y-4">
-          <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs space-y-1">
-            <div className="flex justify-between text-indigo-900 font-semibold">
-              <span>Invoice:</span>
-              <span>{invoice.invoiceNumber}</span>
-            </div>
-            <div className="flex justify-between text-indigo-950 font-bold text-sm">
-              <span>Outstanding Balance:</span>
-              <span>{formatCurrency(invoice.balance)}</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Cardholder Name</label>
-              <input
-                type="text"
-                defaultValue={customer?.name || invoice.customerName}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Card Number</label>
-              <input
-                type="text"
-                defaultValue="4242 •••• •••• 4242"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Expiry (MM/YY)</label>
-                <input
-                  type="text"
-                  defaultValue="12/28"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">CVC</label>
-                <input
-                  type="text"
-                  defaultValue="883"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-500 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Demonstration checkout: payment will instantly settle invoice balance.</span>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setIsCustomerPayModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" icon={CreditCard}>
-              Pay {formatCurrency(invoice.balance)}
-            </Button>
-          </div>
-        </form>
       </Modal>
     </div>
   );

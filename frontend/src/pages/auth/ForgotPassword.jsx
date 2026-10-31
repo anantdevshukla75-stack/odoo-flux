@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Mail } from 'lucide-react';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
-import { authService } from '../../services/authService.js';
+import { requestPasswordReset } from '../../services/authService.js';
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -17,16 +17,10 @@ export function ForgotPassword() {
     setLoading(true);
 
     try {
-      // Connect to real POST /auth/forgot-password (returns HTTP 202 Accepted)
-      await authService.forgotPassword(email);
+      await requestPasswordReset(email);
       setSubmitted(true);
     } catch (err) {
-      if (err.status === 422) {
-        setError('Please enter a valid email address.');
-      } else {
-        // Even if connection fails, provide safe feedback or report server issue
-        setError(err.message || 'Unable to process password reset request.');
-      }
+      setError(err?.message || 'Could not request a password reset.');
     } finally {
       setLoading(false);
     }
@@ -42,43 +36,36 @@ export function ForgotPassword() {
             Reset Password
           </h2>
           <p className="text-sm text-slate-500">
-            Submit your corporate email address to request account recovery
+            Enter your corporate email address to receive reset instructions
           </p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
-          {error && (
-            <div className="p-3 mb-4 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700">
-              {error}
-            </div>
-          )}
-
           {submitted ? (
             <div className="text-center space-y-4">
               <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <h3 className="text-base font-semibold text-slate-900">
-                Password Recovery Logged
+                Instructions Dispatched
               </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                If an account exists for <strong className="text-slate-800">{email}</strong>, a password reset request has been recorded. In the current development environment, reset token dispatch is managed by your system administrator.
+              <p className="text-xs text-slate-500 leading-relaxed">
+                If an account exists for <strong className="text-slate-800">{email}</strong>, a recovery email has been sent with further instructions.
               </p>
-              <div className="pt-3 flex flex-col gap-2">
-                <Link to="/reset-password">
-                  <Button variant="primary" className="w-full">
-                    Enter Reset Token
-                  </Button>
-                </Link>
-                <Link to="/login">
-                  <Button variant="secondary" className="w-full">
-                    Return to Sign In
-                  </Button>
-                </Link>
-              </div>
+              <Link to="/login" className="block pt-2">
+                <Button variant="secondary" className="w-full">
+                  Return to Sign In
+                </Button>
+              </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700">
+                  {error}
+                </div>
+              )}
+
               <Input
                 label="Registered Work Email"
                 type="email"
@@ -94,7 +81,7 @@ export function ForgotPassword() {
                 loading={loading}
                 className="w-full py-2.5 mt-2"
               >
-                Request Password Reset
+                Send Recovery Link
               </Button>
 
               <div className="pt-2 text-center">
@@ -115,3 +102,4 @@ export function ForgotPassword() {
 }
 
 export default ForgotPassword;
+

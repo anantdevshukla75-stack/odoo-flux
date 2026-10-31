@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -21,7 +21,7 @@ import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import Input from '../../components/common/Input.jsx';
 import LoadingState from '../../components/common/LoadingState.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -40,8 +40,8 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
     billingAddress: ''
   });
 
-  const loadData = useCallback(async () => {
-    const details = await mockDataService.getCustomerDetails(customerId);
+  const loadData = async () => {
+    const details = await apiService.getCustomerDetails(customerId);
     if (details) {
       setData(details);
       setEditFormData({
@@ -52,11 +52,11 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
         billingAddress: details.customer.billingAddress || ''
       });
     }
-  }, [customerId]);
+  };
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [customerId]);
 
   if (!data) {
     return <LoadingState message="Loading customer account profile..." />;
@@ -64,16 +64,19 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
 
   const { customer, subscriptions, invoices, quotations, payments, outstandingBalance, totalPayments } = data;
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    // Update local state in demo mode
-    setData(prev => ({
-      ...prev,
-      customer: {
-        ...prev.customer,
-        ...editFormData
-      }
-    }));
+
+    // The backend stores company/contact/billing fields on the customer record.
+    // Full name lives on the linked user and has no update endpoint yet.
+    const updated = await apiService.updateCustomer(customerId, {
+      companyName: editFormData.companyName,
+      phone: editFormData.phone,
+      taxId: editFormData.taxId,
+      billingAddress: editFormData.billingAddress
+    });
+
+    setData((prev) => ({ ...prev, customer: { ...prev.customer, ...updated } }));
     setIsEditModalOpen(false);
   };
 
@@ -93,7 +96,7 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg shrink-0">
-              {customer.fullName[0].toUpperCase()}
+              {(customer.fullName || customer.email || '?')[0].toUpperCase()}
             </div>
             <div>
               <div className="flex items-center gap-2.5">
@@ -383,7 +386,8 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
             label="Contact Full Name"
             value={editFormData.fullName}
             onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
-            required
+            helperText="Managed on the linked login account; contact support to change it."
+            disabled
           />
 
           <Input

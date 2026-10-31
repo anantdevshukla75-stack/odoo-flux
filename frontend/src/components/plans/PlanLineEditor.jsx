@@ -3,7 +3,7 @@ import { Plus, Trash2, Layers, DollarSign } from 'lucide-react';
 import Button from '../common/Button.jsx';
 import Input from '../common/Input.jsx';
 import Select from '../common/Select.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 
 export function PlanLineEditor({ lines = [], onChange }) {
@@ -14,7 +14,7 @@ export function PlanLineEditor({ lines = [], onChange }) {
 
   useEffect(() => {
     async function fetchProducts() {
-      const prods = await mockDataService.getProducts();
+      const prods = await apiService.getProducts();
       setAvailableProducts(prods);
       if (prods.length > 0) {
         setSelectedProductId(prods[0].id);
@@ -24,7 +24,8 @@ export function PlanLineEditor({ lines = [], onChange }) {
     fetchProducts();
   }, []);
 
-  const handleProductChange = (productId) => {
+  const handleProductChange = (rawProductId) => {
+    const productId = Number(rawProductId);
     setSelectedProductId(productId);
     const found = availableProducts.find(p => p.id === productId);
     if (found) {
@@ -34,7 +35,7 @@ export function PlanLineEditor({ lines = [], onChange }) {
 
   const handleAddLine = (e) => {
     e.preventDefault();
-    const prod = availableProducts.find(p => p.id === selectedProductId);
+    const prod = availableProducts.find(p => p.id === Number(selectedProductId));
     if (!prod) return;
 
     const qty = Math.max(1, parseInt(quantity, 10) || 1);
