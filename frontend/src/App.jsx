@@ -1,147 +1,185 @@
-import React, { useState } from 'react';
-import Login from './components/Auth/Login';
-import Register from './components/Auth/Register';
-import Sidebar from './components/Navigation/Sidebar';
-import TopHeader from './components/Navigation/TopHeader';
-import { CreditCard, Layers, Zap, CheckCircle2 } from 'lucide-react';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import AppLayout from './components/layout/AppLayout.jsx';
+import ProtectedRoute from './components/layout/ProtectedRoute.jsx';
 
-export default function App() {
-  const [view, setView] = useState('landing'); // 'landing', 'login', 'register', 'app'
-  const [user, setUser] = useState(null);
-  const [activeRole, setActiveRole] = useState('admin'); // 'admin', 'staff', 'customer'
-  const [activeTab, setActiveTab] = useState('dashboard');
+// Auth Pages
+import Login from './pages/auth/Login.jsx';
+import Register from './pages/auth/Register.jsx';
+import ForgotPassword from './pages/auth/ForgotPassword.jsx';
+import ResetPassword from './pages/auth/ResetPassword.jsx';
 
-  const handleLoginSuccess = (userData) => {
-    setUser(userData);
-    setActiveRole(userData.role || 'admin');
-    setView('app');
-  };
+// Admin Pages
+import AdminDashboard from './pages/admin/Dashboard.jsx';
+import AdminCustomers from './pages/admin/Customers.jsx';
+import AdminCustomerDetails from './pages/admin/CustomerDetails.jsx';
+import AdminProducts from './pages/admin/Products.jsx';
+import AdminProductForm from './pages/admin/ProductForm.jsx';
+import AdminProductDetails from './pages/admin/ProductDetails.jsx';
+import AdminPlans from './pages/admin/Plans.jsx';
+import AdminPlanForm from './pages/admin/PlanForm.jsx';
+import AdminPlanDetails from './pages/admin/PlanDetails.jsx';
 
-  const handleLogout = () => {
-    setUser(null);
-    setView('landing');
-  };
+// Quotation Templates
+import QuotationTemplates from './pages/admin/QuotationTemplates.jsx';
+import QuotationTemplateForm from './pages/admin/QuotationTemplateForm.jsx';
+import QuotationTemplateDetails from './pages/admin/QuotationTemplateDetails.jsx';
 
-  if (view === 'login') {
-    return <Login onSwitchToRegister={() => setView('register')} onLoginSuccess={handleLoginSuccess} />;
-  }
+// Quotations & Subscriptions
+import Quotations from './pages/admin/Quotations.jsx';
+import QuotationForm from './pages/admin/QuotationForm.jsx';
+import QuotationDetails from './pages/admin/QuotationDetails.jsx';
+import Subscriptions from './pages/admin/Subscriptions.jsx';
+import SubscriptionDetails from './pages/admin/SubscriptionDetails.jsx';
 
-  if (view === 'register') {
-    return <Register onSwitchToLogin={() => setView('login')} />;
-  }
+// Invoicing, Taxes & Team
+import AdminTaxes from './pages/admin/Taxes.jsx';
+import Discounts from './pages/admin/Discounts.jsx';
+import DiscountForm from './pages/admin/DiscountForm.jsx';
+import Invoices from './pages/admin/Invoices.jsx';
+import InvoiceDetails from './pages/admin/InvoiceDetails.jsx';
+import InvoicePrint from './pages/admin/InvoicePrint.jsx';
+import Payments from './pages/admin/Payments.jsx';
+import AdminStaff from './pages/admin/Staff.jsx';
+import AdminReports from './pages/admin/AdminReports.jsx';
 
-  // Application Dashboard Portal Layout
-  if (view === 'app') {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
-        <Sidebar
-          activeRole={activeRole}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onLogout={handleLogout}
-        />
-        
-        <div className="flex-1 flex flex-col min-w-0">
-          <TopHeader
-            user={user}
-            activeRole={activeRole}
-            onRoleSwitch={(role) => {
-              setActiveRole(role);
-              setActiveTab(role === 'customer' ? 'my_subscriptions' : 'dashboard');
-            }}
-          />
+// Staff Pages
+import StaffDashboard from './pages/staff/Dashboard.jsx';
+import StaffCustomers from './pages/staff/Customers.jsx';
+import StaffOverdue from './pages/staff/StaffOverdue.jsx';
 
-          <main className="p-8 flex-1 overflow-y-auto">
-            <div className="max-w-6xl mx-auto">
-              <div className="flex items-center justify-between mb-8 border-b border-slate-800 pb-5">
-                <div>
-                  <h1 className="text-2xl font-bold text-white capitalize">{activeTab.replace('_', ' ')}</h1>
-                  <p className="text-slate-400 text-xs mt-1">
-                    Managing Brightloop Software as <span className="text-indigo-400 font-semibold uppercase">{activeRole}</span>
-                  </p>
-                </div>
-                <span className="text-xs bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/20 font-semibold">
-                  Sub-2s Target Active
-                </span>
-              </div>
+// Customer Pages
+import CustomerDashboard from './pages/customer/CustomerDashboard.jsx';
+import CustomerQuotations from './pages/customer/CustomerQuotations.jsx';
+import CustomerSubscriptions from './pages/customer/CustomerSubscriptions.jsx';
+import CustomerProfile from './pages/customer/CustomerProfile.jsx';
 
-              {/* Placeholder Workspace Area */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
-                <p className="text-slate-400 text-sm">
-                  Active module view for <strong className="text-white">{activeTab}</strong>. Next step: Product & Subscription State Machine views.
-                </p>
-              </div>
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
+function RootRedirect() {
+  const { user, role } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (role === 'ADMIN') return <Navigate to="/admin/dashboard" replace />;
+  if (role === 'STAFF') return <Navigate to="/staff/dashboard" replace />;
+  return <Navigate to="/customer/dashboard" replace />;
+}
 
-  // Public Landing Page View
+export function App() {
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setView('landing')}>
-            <div className="bg-indigo-600 p-2 rounded-lg">
-              <Zap className="h-5 w-5 text-white" />
-            </div>
-            <span className="font-bold text-lg tracking-tight">Brightloop SMS</span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setView('login')}
-              className="text-sm font-medium text-slate-300 hover:text-white px-3 py-1.5 cursor-pointer"
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => setView('register')}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition cursor-pointer shadow-lg shadow-indigo-600/30"
-            >
-              Register
-            </button>
-          </div>
-        </div>
-      </header>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Auth Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-      <main className="flex-1 max-w-7xl mx-auto px-6 py-16 w-full text-center">
-        <h1 className="text-4xl md:text-5xl font-extrabold text-white mb-6">
-          Subscription Management System
-        </h1>
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-12">
-          Recurring billing, invoice automation, and multi-tier subscription engine for Brightloop Software.
-        </p>
+          {/* Root Redirect */}
+          <Route path="/" element={<RootRedirect />} />
 
-        <div className="grid md:grid-cols-3 gap-6 text-left mb-12">
-          <div className="bg-slate-800/50 border border-slate-700/50 p-6 rounded-xl">
-            <CreditCard className="h-8 w-8 text-indigo-400 mb-4" />
-            <h3 className="text-xl font-bold text-white mb-2">Automated Billing</h3>
-            <p className="text-slate-400 text-sm">Recurring payment triggers and invoice sync.</p>
-          </div>
-          <div className="bg-slate-800/50 border border-slate-700/50 p-6 rounded-xl">
-            <Layers className="h-8 w-8 text-indigo-400 mb-4" />
-            <h3 className="text-xl font-bold text-white mb-2">Tier & Variant Control</h3>
-            <p className="text-slate-400 text-sm">Odoo brand variants and flexible billing intervals.</p>
-          </div>
-          <div className="bg-slate-800/50 border border-slate-700/50 p-6 rounded-xl">
-            <CheckCircle2 className="h-8 w-8 text-indigo-400 mb-4" />
-            <h3 className="text-xl font-bold text-white mb-2">Role Access Portal</h3>
-            <p className="text-slate-400 text-sm">Tailored views for Admins, Staff, and Customers.</p>
-          </div>
-        </div>
+          {/* ADMIN Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route element={<AppLayout />}>
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
-        <button
-          onClick={() => {
-            setUser({ email: 'admin@brightloop.com', role: 'admin' });
-            setView('app');
-          }}
-          className="bg-slate-800 border border-slate-700 hover:border-indigo-500 text-indigo-400 text-sm font-semibold px-6 py-3 rounded-xl transition cursor-pointer"
-        >
-          Launch Dashboard Preview Mode
-        </button>
-      </main>
-    </div>
+              {/* Customer Management */}
+              <Route path="/admin/customers" element={<AdminCustomers basePath="/admin/customers" />} />
+              <Route path="/admin/customers/:customerId" element={<AdminCustomerDetails backPath="/admin/customers" />} />
+
+              {/* Products & Variants */}
+              <Route path="/admin/products" element={<AdminProducts />} />
+              <Route path="/admin/products/new" element={<AdminProductForm />} />
+              <Route path="/admin/products/:productId" element={<AdminProductDetails />} />
+              <Route path="/admin/products/:productId/edit" element={<AdminProductForm />} />
+
+              {/* Subscription Plans */}
+              <Route path="/admin/plans" element={<AdminPlans />} />
+              <Route path="/admin/plans/new" element={<AdminPlanForm />} />
+              <Route path="/admin/plans/:planId" element={<AdminPlanDetails />} />
+              <Route path="/admin/plans/:planId/edit" element={<AdminPlanForm />} />
+
+              {/* Quotation Templates */}
+              <Route path="/admin/quotation-templates" element={<QuotationTemplates />} />
+              <Route path="/admin/quotation-templates/new" element={<QuotationTemplateForm />} />
+              <Route path="/admin/quotation-templates/:templateId" element={<QuotationTemplateDetails />} />
+              <Route path="/admin/quotation-templates/:templateId/edit" element={<QuotationTemplateForm />} />
+
+              {/* Quotations */}
+              <Route path="/admin/quotations" element={<Quotations basePath="/admin/quotations" />} />
+              <Route path="/admin/quotations/new" element={<QuotationForm basePath="/admin/quotations" />} />
+              <Route path="/admin/quotations/:quotationId" element={<QuotationDetails backPath="/admin/quotations" />} />
+
+              {/* Subscriptions */}
+              <Route path="/admin/subscriptions" element={<Subscriptions basePath="/admin/subscriptions" />} />
+              <Route path="/admin/subscriptions/:subscriptionId" element={<SubscriptionDetails backPath="/admin/subscriptions" />} />
+
+              {/* Invoicing, Taxes & Team */}
+              <Route path="/admin/taxes" element={<AdminTaxes />} />
+              <Route path="/admin/discounts" element={<Discounts />} />
+              <Route path="/admin/discounts/new" element={<DiscountForm />} />
+              <Route path="/admin/discounts/:discountId/edit" element={<DiscountForm />} />
+              <Route path="/admin/invoices" element={<Invoices basePath="/admin/invoices" />} />
+              <Route path="/admin/invoices/:invoiceId" element={<InvoiceDetails backPath="/admin/invoices" />} />
+              <Route path="/admin/payments" element={<Payments basePath="/admin/payments" />} />
+              <Route path="/admin/team" element={<AdminStaff />} />
+              <Route path="/admin/reports" element={<AdminReports />} />
+            </Route>
+          </Route>
+
+          {/* Dedicated Print Routes (Chrome-free print layout) */}
+          <Route path="/admin/invoices/:invoiceId/print" element={<InvoicePrint />} />
+          <Route path="/staff/invoices/:invoiceId/print" element={<InvoicePrint />} />
+          <Route path="/customer/invoices/:invoiceId/print" element={<InvoicePrint />} />
+
+          {/* STAFF Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['STAFF', 'ADMIN']} />}>
+            <Route element={<AppLayout />}>
+              <Route path="/staff/dashboard" element={<StaffDashboard />} />
+              <Route path="/staff/customers" element={<StaffCustomers />} />
+              <Route path="/staff/customers/:customerId" element={<AdminCustomerDetails backPath="/staff/customers" />} />
+
+              {/* Staff Quotations */}
+              <Route path="/staff/quotations" element={<Quotations basePath="/staff/quotations" />} />
+              <Route path="/staff/quotations/new" element={<QuotationForm basePath="/staff/quotations" />} />
+              <Route path="/staff/quotations/:quotationId" element={<QuotationDetails backPath="/staff/quotations" />} />
+
+              {/* Staff Subscriptions */}
+              <Route path="/staff/subscriptions" element={<Subscriptions basePath="/staff/subscriptions" />} />
+              <Route path="/staff/subscriptions/:subscriptionId" element={<SubscriptionDetails backPath="/staff/subscriptions" />} />
+
+              {/* Staff Invoices & Operations */}
+              <Route path="/staff/invoices" element={<Invoices basePath="/staff/invoices" />} />
+              <Route path="/staff/invoices/:invoiceId" element={<InvoiceDetails backPath="/staff/invoices" />} />
+              <Route path="/staff/payments" element={<Payments basePath="/staff/payments" />} />
+              <Route path="/staff/overdue" element={<StaffOverdue />} />
+            </Route>
+          </Route>
+
+          {/* CUSTOMER Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']} />}>
+            <Route element={<AppLayout />}>
+              <Route path="/customer/dashboard" element={<CustomerDashboard />} />
+
+              {/* Customer Quotations & Subscriptions */}
+              <Route path="/customer/quotations" element={<CustomerQuotations />} />
+              <Route path="/customer/quotations/:quotationId" element={<CustomerQuotations />} />
+              <Route path="/customer/subscriptions" element={<CustomerSubscriptions />} />
+              <Route path="/customer/subscriptions/:subscriptionId" element={<CustomerSubscriptions />} />
+
+              {/* Billing & Profile */}
+              <Route path="/customer/invoices" element={<Invoices basePath="/customer/invoices" />} />
+              <Route path="/customer/invoices/:invoiceId" element={<InvoiceDetails backPath="/customer/invoices" />} />
+              <Route path="/customer/payments" element={<Payments basePath="/customer/payments" />} />
+              <Route path="/customer/profile" element={<CustomerProfile />} />
+            </Route>
+          </Route>
+
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
+
+export default App;
