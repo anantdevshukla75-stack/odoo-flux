@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, Search, RefreshCw, Filter, Pause, Play, XCircle } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
@@ -12,7 +12,7 @@ import { formatDate } from '../../utils/formatDate.js';
 export function Subscriptions({ basePath = '/admin/subscriptions' }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
 
   const [subscriptions, setSubscriptions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,18 +22,19 @@ export function Subscriptions({ basePath = '/admin/subscriptions' }) {
 
   const isCustomer = role === 'CUSTOMER' || location.pathname.startsWith('/customer');
 
-  const loadSubscriptions = async () => {
+  const loadSubscriptions = useCallback(async () => {
     const list = await mockDataService.getSubscriptions();
     if (isCustomer) {
-      setSubscriptions(list.filter(s => s.customerId === 'cust-001'));
+      const custId = user?.customerId || user?.id || 'cust-001';
+      setSubscriptions(list.filter(s => s.customerId === custId));
     } else {
       setSubscriptions(list);
     }
-  };
+  }, [isCustomer, user]);
 
   useEffect(() => {
     loadSubscriptions();
-  }, [isCustomer]);
+  }, [loadSubscriptions]);
 
   const filteredSubscriptions = useMemo(() => {
     return subscriptions.filter((s) => {

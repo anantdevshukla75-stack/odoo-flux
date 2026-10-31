@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Receipt, DollarSign, Download, Filter, Eye, Printer, AlertTriangle } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
@@ -8,7 +8,7 @@ import Button from '../../components/common/Button.jsx';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 
 export function Invoices({ basePath = '/admin/invoices' }) {
   const navigate = useNavigate();
@@ -16,17 +16,18 @@ export function Invoices({ basePath = '/admin/invoices' }) {
   const [invoices, setInvoices] = useState([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
 
-  const loadInvoices = async () => {
+  const loadInvoices = useCallback(async () => {
     let list = await mockDataService.getInvoices();
     if (role === 'CUSTOMER') {
-      list = list.filter(i => i.customerId === 'cust-001');
+      const custId = user?.customerId || user?.id || 'cust-001';
+      list = list.filter(i => i.customerId === custId);
     }
     setInvoices(list);
-  };
+  }, [role, user]);
 
   useEffect(() => {
     loadInvoices();
-  }, [role]);
+  }, [loadInvoices]);
 
   // Display status filter support: Draft, Confirmed, Partially paid, Paid, Overdue, Cancelled
   const filteredInvoices = filterStatus === 'ALL'

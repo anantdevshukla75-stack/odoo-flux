@@ -45,8 +45,8 @@ export function RecordPaymentForm({
           setAmount(foundInv.balance > 0 ? foundInv.balance : foundInv.totalAmount);
           setNote(`Payment settlement for ${foundInv.invoiceNumber}`);
         }
-      } else if (custList.length > 0 && !selectedCustomerId) {
-        setSelectedCustomerId(custList[0].id);
+      } else if (custList.length > 0) {
+        setSelectedCustomerId(prev => prev || custList[0].id);
       }
     }
     loadData();

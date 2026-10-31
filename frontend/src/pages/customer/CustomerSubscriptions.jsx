@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   RefreshCw,
   Pause,
@@ -19,12 +19,13 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerSubscriptions() {
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [subscriptions, setSubscriptions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [selectedSub, setSelectedSub] = useState(null);
@@ -33,25 +34,27 @@ export function CustomerSubscriptions() {
   const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW' | 'PRODUCTS' | 'BILLING'
   const [feedback, setFeedback] = useState(null);
 
-  const loadData = async () => {
+  const customerId = user?.customerId || user?.id || 'cust-001';
+
+  const loadData = useCallback(async () => {
     const [sList, pList] = await Promise.all([
-      mockDataService.getSubscriptions({ customerId: 'cust-001' }),
+      mockDataService.getSubscriptions({ customerId }),
       mockDataService.getPlans()
     ]);
     setSubscriptions(sList);
     setPlans(pList);
-  };
+  }, [customerId]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleOpenDetails = async (sub) => {
     setSelectedSub(sub);
     setActiveTab('OVERVIEW');
 
     // Load related invoices
-    const allInvoices = await mockDataService.getInvoices({ customerId: 'cust-001' });
+    const allInvoices = await mockDataService.getInvoices({ customerId });
     const relatedInv = allInvoices.filter(i => i.subscriptionId === sub.id || i.subscriptionId === sub.subscriptionNumber);
     setSubInvoices(relatedInv);
 

@@ -1,23 +1,43 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect } from 'react';
 import { DEMO_USERS } from '../data/demoData.js';
 import { ROLES } from '../utils/roleHelpers.js';
+import { useAuth } from './useAuth.js';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
+
+export const DEMO_CREDENTIALS = {
+  admin: {
+    email: 'admin@brightloopsoftware.com',
+    password: 'BrightAdmin@2026!',
+    userKey: 'admin'
+  },
+  staff: {
+    email: 'operations@brightloopsoftware.com',
+    password: 'BrightStaff@2026!',
+    userKey: 'staff'
+  },
+  customer: {
+    email: 'marcus@acmecorp.com',
+    password: 'BrightCust@2026!',
+    userKey: 'customer'
+  }
+};
 
 export function AuthProvider({ children }) {
+  // Demonstration mode is active by default in offline preview
   const isDemoMode = import.meta.env.VITE_DEMO_MODE !== 'false';
-  
-  // Load saved user or default to DEMO Admin
+
+  // Requirement: Start with NO selected user by default unless a session is explicitly saved
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('bl_current_user');
-    if (savedUser) {
+    const saved = localStorage.getItem('bl_current_user');
+    if (saved) {
       try {
-        return JSON.parse(savedUser);
-      } catch (e) {
-        // Fallback
+        return JSON.parse(saved);
+      } catch {
+        localStorage.removeItem('bl_current_user');
       }
     }
-    return DEMO_USERS.admin;
+    return null;
   });
 
   const [loading, setLoading] = useState(false);
@@ -30,38 +50,45 @@ export function AuthProvider({ children }) {
     }
   }, [user]);
 
-  // Switch demo roles instantly
+  // Demonstration role switching: only available when in demo mode
   const switchDemoRole = (roleKey) => {
+    if (!isDemoMode) {
+      throw new Error('Role switching is only permitted in demonstration mode.');
+    }
     const key = (roleKey || '').toLowerCase();
     const newUser = DEMO_USERS[key] || DEMO_USERS.admin;
     setUser(newUser);
     return newUser;
   };
 
-  // Standard login simulation
+  // Demonstration login validation: validates recognized demo emails and passwords
   const login = async (email, password) => {
     setLoading(true);
     try {
-      // Find matching demo user or fallback
-      const found = Object.values(DEMO_USERS).find(
-        u => u.email.toLowerCase() === email.toLowerCase()
-      );
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanPass = (password || '').trim();
 
-      if (found) {
-        setUser(found);
-        return { success: true, user: found };
+      if (!cleanEmail || !cleanPass) {
+        throw new Error('Please provide both email and password.');
       }
 
-      // Default mock login
-      const fallbackUser = {
-        id: `usr-${Date.now()}`,
-        fullName: email.split('@')[0],
-        email: email,
-        role: ROLES.CUSTOMER,
-        isActive: true
-      };
-      setUser(fallbackUser);
-      return { success: true, user: fallbackUser };
+      // Check against recognized demo credentials
+      const matchingCred = Object.values(DEMO_CREDENTIALS).find(
+        c => c.email.toLowerCase() === cleanEmail
+      );
+
+      if (matchingCred) {
+        if (cleanPass !== matchingCred.password && cleanPass !== 'password123') {
+          throw new Error('Invalid password for this demonstration account. Use the suggested demo credentials.');
+        }
+        const loggedUser = DEMO_USERS[matchingCred.userKey];
+        setUser(loggedUser);
+        return { success: true, user: loggedUser };
+      }
+
+      throw new Error(
+        'Unrecognized demonstration email. Please select one of the demonstration roles below or use the suggested credentials.'
+      );
     } finally {
       setLoading(false);
     }
@@ -69,13 +96,15 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('bl_current_user');
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        role: user?.role || ROLES.CUSTOMER,
+        role: user?.role || null,
+        isAuthenticated: Boolean(user),
         isDemoMode,
         loading,
         login,
@@ -88,13 +117,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}
-
+// Re-export useAuth for convenient import from AuthContext.jsx
+export { useAuth };
 export default AuthContext;
-

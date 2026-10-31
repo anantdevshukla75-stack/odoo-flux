@@ -42,15 +42,18 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   const [lineQty, setLineQty] = useState(1);
   const [linePrice, setLinePrice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [taxesList, setTaxesList] = useState([]);
+  const [selectedTaxId, setSelectedTaxId] = useState('');
 
   useEffect(() => {
     async function loadData() {
-      const [cList, pList, prodList, tList, dList] = await Promise.all([
+      const [cList, pList, prodList, tList, dList, taxList] = await Promise.all([
         mockDataService.getCustomers(),
         mockDataService.getPlans(),
         mockDataService.getProducts(),
         mockDataService.getQuotationTemplates(),
-        mockDataService.getDiscounts()
+        mockDataService.getDiscounts(),
+        mockDataService.getTaxes()
       ]);
 
       setCustomers(cList);
@@ -58,6 +61,12 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       setProducts(prodList);
       setTemplates(tList);
       setAvailableDiscounts(dList);
+      setTaxesList(taxList || []);
+
+      const defTax = (taxList || []).find(t => t.isDefault) || (taxList && taxList[0]);
+      if (defTax) {
+        setSelectedTaxId(defTax.id);
+      }
 
       if (cList.length > 0) {
         setSelectedCustomerId(cList[0].id);
@@ -73,7 +82,27 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
       if (templateIdParam) {
         const tmpl = tList.find(t => t.id === templateIdParam);
         if (tmpl) {
-          applyTemplate(tmpl, pList);
+          setSelectedTemplateId(tmpl.id);
+          if (tmpl.defaultPlanId) {
+            setSelectedPlanId(tmpl.defaultPlanId);
+            const planFound = pList.find(p => p.id === tmpl.defaultPlanId);
+            setSelectedPlan(planFound || null);
+          }
+          if (tmpl.validityDays) {
+            setValidityDays(tmpl.validityDays);
+          }
+          if (tmpl.productLines && tmpl.productLines.length > 0) {
+            const mapped = tmpl.productLines.map(l => ({
+              id: `line-${Date.now()}-${Math.random()}`,
+              productId: l.productId,
+              productName: l.productName,
+              variantName: 'Base License',
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              taxRate: 18
+            }));
+            setProductLines(mapped);
+          }
         }
       } else if (pList.length > 0) {
         setSelectedPlanId(pList[0].id);
@@ -201,7 +230,11 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   // Financial Calculations
   const planBase = selectedPlan ? Number(selectedPlan.basePrice || 0) : 0;
   const linesSubtotal = productLines.reduce((acc, l) => acc + (l.quantity * l.unitPrice), 0);
-  const subtotal = planBase + linesSubtotal;
+  // Avoid double-charging base plan when product lines already define proposal items
+  const subtotal = productLines.length > 0 ? linesSubtotal : planBase;
+
+  const selectedTax = taxesList.find(t => t.id === selectedTaxId);
+  const taxRate = selectedTax ? Number(selectedTax.rate || 0) : 18;
 
   let discountAmount = 0.00;
   if (appliedDiscount) {
@@ -213,7 +246,7 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
   }
 
   const taxableAmount = Math.max(0, subtotal - discountAmount);
-  const taxes = Number((taxableAmount * 0.18).toFixed(2));
+  const taxes = Number((taxableAmount * (taxRate / 100)).toFixed(2));
   const grandTotal = taxableAmount + taxes;
 
   const expirationDate = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000)
@@ -523,19 +556,25 @@ export function QuotationForm({ basePath = '/admin/quotations' }) {
 
             <div className="space-y-2.5 py-4 text-sm">
               <div className="flex items-center justify-between text-slate-600">
-                <span>Base Plan Charge:</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(planBase)}</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-600">
-                <span>Add-on Products & Lines:</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(linesSubtotal)}</span>
-              </div>
-              <div className="flex items-center justify-between font-medium text-slate-700 pt-1 border-t border-slate-100">
-                <span>Net Subtotal:</span>
+                <span>{productLines.length > 0 ? 'Itemized Lines Subtotal:' : 'Base Plan Charge:'}</span>
                 <span className="font-semibold text-slate-900">{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-600">
-                <span>Jurisdictional Taxes (18%):</span>
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-xs text-slate-500 mb-1">Applicable Tax Configuration</label>
+                <select
+                  value={selectedTaxId}
+                  onChange={(e) => setSelectedTaxId(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {taxesList.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.rate}%)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between text-slate-600 pt-1">
+                <span>Tax Amount ({taxRate}%):</span>
                 <span className="font-semibold text-slate-900">{formatCurrency(taxes)}</span>
               </div>
 

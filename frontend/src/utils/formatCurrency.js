@@ -1,25 +1,39 @@
 /**
- * Formats a numeric value into a localized currency string.
- * Uses INR (₹) or USD ($) based on configuration.
+ * Brightloop Software - Centralized Currency Configuration & Formatter
  */
-export function formatCurrency(amount, currency = 'USD') {
+
+export const CURRENCY_CONFIG = {
+  code: 'USD',
+  locale: 'en-US',
+  symbol: '$',
+  name: 'US Dollar'
+};
+
+/**
+ * Formats a numeric value into a localized currency string.
+ * Uses centralized demonstration currency configuration.
+ */
+export function formatCurrency(
+  amount,
+  currency = CURRENCY_CONFIG.code,
+  locale = CURRENCY_CONFIG.locale
+) {
   if (amount === undefined || amount === null || isNaN(Number(amount))) {
-    return '$0.00';
+    return `${CURRENCY_CONFIG.symbol}0.00`;
   }
 
   const num = Number(amount);
-  
+
   try {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(num);
-  } catch (err) {
-    return `$${num.toFixed(2)}`;
+  } catch {
+    return `${CURRENCY_CONFIG.symbol}${num.toFixed(2)}`;
   }
 }
 
 export default formatCurrency;
-

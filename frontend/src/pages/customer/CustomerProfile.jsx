@@ -3,7 +3,7 @@ import { Building, Save, CheckCircle2, User, Mail, Phone, MapPin, Hash, ShieldCh
 import PageHeader from '../../components/common/PageHeader.jsx';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 
 export function CustomerProfile() {

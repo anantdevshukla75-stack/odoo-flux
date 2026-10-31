@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { Check, X, CheckCircle2, Lock } from 'lucide-react';
 import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const [token, setToken] = useState(searchParams.get('token') || 'demo-reset-token-2026');
   const [password, setPassword] = useState('');

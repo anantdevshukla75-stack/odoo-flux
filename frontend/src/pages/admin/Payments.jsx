@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CreditCard,
   Plus,
@@ -18,26 +19,27 @@ import RecordPaymentForm from './RecordPaymentForm.jsx';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDateTime, formatDate } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 
 export function Payments({ basePath = '/admin/payments' }) {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const [payments, setPayments] = useState([]);
   const [methodFilter, setMethodFilter] = useState('ALL');
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     let list = await mockDataService.getPayments();
     if (role === 'CUSTOMER') {
-      list = list.filter(p => p.customerId === 'cust-001');
+      const custId = user?.customerId || user?.id || 'cust-001';
+      list = list.filter(p => p.customerId === custId);
     }
     setPayments(list);
-  };
+  }, [role, user]);
 
   useEffect(() => {
     loadData();
-  }, [role]);
+  }, [loadData]);
 
   const filteredPayments = methodFilter === 'ALL'
     ? payments
@@ -73,11 +75,21 @@ export function Payments({ basePath = '/admin/payments' }) {
     },
     {
       header: 'Invoice Number',
-      render: (row) => (
-        <span className="font-mono text-xs font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-          {row.invoiceNumber}
-        </span>
-      )
+      render: (row) => {
+        const invoiceBasePath = basePath.startsWith('/staff')
+          ? '/staff/invoices'
+          : basePath.startsWith('/customer')
+          ? '/customer/invoices'
+          : '/admin/invoices';
+        return (
+          <Link
+            to={`${invoiceBasePath}/${row.invoiceId}`}
+            className="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors"
+          >
+            {row.invoiceNumber}
+          </Link>
+        );
+      }
     },
     {
       header: 'Method',

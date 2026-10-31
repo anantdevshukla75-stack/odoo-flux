@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   RefreshCw,
   Receipt,
@@ -16,14 +16,14 @@ import {
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import LoadingState from '../../components/common/LoadingState.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerDashboard() {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const [subscriptions, setSubscriptions] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -34,11 +34,12 @@ export function CustomerDashboard() {
   useEffect(() => {
     async function loadCustomerData() {
       setLoading(true);
+      const customerId = user?.customerId || user?.id || 'cust-001';
       const [sList, qList, iList, pList] = await Promise.all([
-        mockDataService.getSubscriptions({ customerId: 'cust-001' }),
-        mockDataService.getQuotations({ customerId: 'cust-001' }),
-        mockDataService.getInvoices({ customerId: 'cust-001' }),
-        mockDataService.getPayments({ customerId: 'cust-001' })
+        mockDataService.getSubscriptions({ customerId }),
+        mockDataService.getQuotations({ customerId }),
+        mockDataService.getInvoices({ customerId }),
+        mockDataService.getPayments({ customerId })
       ]);
 
       setSubscriptions(sList);
@@ -48,12 +49,15 @@ export function CustomerDashboard() {
       setLoading(false);
     }
     loadCustomerData();
-  }, []);
+  }, [user]);
+
+  if (loading) {
+    return <LoadingState message="Loading your customer portal dashboard..." />;
+  }
 
   const activeSub = subscriptions.find(s => s.status === 'ACTIVE') || subscriptions[0] || null;
   const pendingQuotes = quotations.filter(q => q.status === 'SENT');
   const outstandingTotal = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
-  const nextBilling = activeSub?.nextBillingDate || '—';
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">

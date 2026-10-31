@@ -1,11 +1,3 @@
-/**
- * Brightloop Software - Demonstration Data Service
- * 
- * Provides an in-memory & localStorage persistent state machine for
- * customers, products, plans, quotations, subscriptions, invoices, and payments.
- * Easily swappable for real backend API calls later.
- */
-
 import {
   DEMO_CUSTOMERS,
   DEMO_PRODUCTS,
@@ -21,12 +13,50 @@ import {
   DEMO_METRICS
 } from '../data/demoData.js';
 
-class MockDataService {
-  constructor() {
-    this._initStorage();
+/**
+ * Calendar-aware next billing date calculation
+ * Supports DAILY, WEEKLY, MONTHLY, YEARLY without hardcoded 30-day assumptions
+ */
+export function calculateNextBillingDate(startDate, interval = 'MONTHLY') {
+  const d = new Date(startDate || Date.now());
+  const normalized = String(interval).toUpperCase();
+
+  switch (normalized) {
+    case 'DAILY':
+      d.setDate(d.getDate() + 1);
+      break;
+    case 'WEEKLY':
+      d.setDate(d.getDate() + 7);
+      break;
+    case 'YEARLY':
+    case 'ANNUAL':
+      d.setFullYear(d.getFullYear() + 1);
+      break;
+    case 'MONTHLY':
+    default:
+      d.setMonth(d.getMonth() + 1);
+      break;
   }
 
-  _initStorage() {
+  return d.toISOString().split('T')[0];
+}
+
+/**
+ * Evaluates whether an invoice is overdue based on due date, unpaid balance and status
+ */
+export function isInvoiceOverdue(invoice) {
+  if (!invoice) return false;
+  if (invoice.status === 'PAID' || invoice.status === 'CANCELLED') return false;
+  const isPastDue = new Date(invoice.dueDate) < new Date();
+  return Number(invoice.balance || 0) > 0 && isPastDue;
+}
+
+class MockDataService {
+  constructor() {
+    this._initializeStorage();
+  }
+
+  _initializeStorage() {
     if (!localStorage.getItem('bl_customers')) {
       localStorage.setItem('bl_customers', JSON.stringify(DEMO_CUSTOMERS));
     }
@@ -66,7 +96,7 @@ class MockDataService {
     try {
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -179,6 +209,36 @@ class MockDataService {
     return null;
   }
 
+  // --- Product Variants ---
+  async addProductVariant(productId, variantData) {
+    const list = this._get('bl_products');
+    const index = list.findIndex(p => p.id === productId);
+    if (index !== -1) {
+      const prod = list[index];
+      const newVar = {
+        id: `var-${Date.now().toString().slice(-4)}`,
+        priceAdjustment: 0,
+        ...variantData
+      };
+      prod.variants = prod.variants || [];
+      prod.variants.push(newVar);
+      this._set('bl_products', list);
+      return newVar;
+    }
+    return null;
+  }
+
+  async removeProductVariant(productId, variantId) {
+    const list = this._get('bl_products');
+    const index = list.findIndex(p => p.id === productId);
+    if (index !== -1) {
+      list[index].variants = (list[index].variants || []).filter(v => v.id !== variantId);
+      this._set('bl_products', list);
+      return true;
+    }
+    return false;
+  }
+
   // --- Plans ---
   async getPlans() {
     return this._get('bl_plans');
@@ -194,9 +254,8 @@ class MockDataService {
     const newPlan = {
       id: `plan-${Date.now().toString().slice(-4)}`,
       isActive: true,
-      autoClose: false,
-      allowPause: true,
-      allowRenewal: true,
+      billingInterval: 'MONTHLY',
+      billingIntervalCount: 1,
       products: [],
       ...planData
     };
@@ -284,15 +343,14 @@ class MockDataService {
 
   async createQuotationTemplate(data) {
     const list = this._get('bl_quotation_templates');
-    const newTmpl = {
+    const newTemplate = {
       id: `tmpl-${Date.now().toString().slice(-4)}`,
       productLines: [],
-      validityDays: 30,
       ...data
     };
-    list.unshift(newTmpl);
+    list.unshift(newTemplate);
     this._set('bl_quotation_templates', list);
-    return newTmpl;
+    return newTemplate;
   }
 
   async updateQuotationTemplate(id, data) {
@@ -306,7 +364,7 @@ class MockDataService {
     return null;
   }
 
-  // --- Quotations ---
+  // --- Quotations & Subscription Lifecycle ---
   async getQuotations(filter = {}) {
     let list = this._get('bl_quotations');
     if (filter.customerId) {
@@ -325,7 +383,7 @@ class MockDataService {
     const newQuot = {
       id: `quot-${Date.now().toString().slice(-4)}`,
       quotationNumber: `QT-2026-${Math.floor(100 + Math.random() * 900)}`,
-      status: 'DRAFT',
+      status: data.status || 'DRAFT',
       createdAt: new Date().toISOString(),
       ...data
     };
@@ -334,18 +392,26 @@ class MockDataService {
     return newQuot;
   }
 
+  /**
+   * Defined Subscription & Quotation Lifecycle:
+   * DRAFT -> QUOTATION -> CONFIRMED -> ACTIVE -> CLOSED
+   * Note: Accepting a quotation moves it to CONFIRMED.
+   * Does NOT auto-convert to ACTIVE and does NOT automatically generate an invoice.
+   */
   async updateQuotationStatus(id, newStatus) {
     const list = this._get('bl_quotations');
     const index = list.findIndex(q => q.id === id);
     if (index !== -1) {
-      list[index].status = newStatus;
+      const q = list[index];
+      q.status = newStatus;
       this._set('bl_quotations', list);
 
-      // If accepted, generate a subscription automatically!
-      if (newStatus === 'ACCEPTED') {
-        await this.createSubscriptionFromQuotation(list[index]);
+      if (newStatus === 'ACCEPTED' || newStatus === 'CONFIRMED') {
+        q.status = 'CONFIRMED';
+        this._set('bl_quotations', list);
+        await this.createSubscriptionFromQuotation(q);
       }
-      return list[index];
+      return q;
     }
     return null;
   }
@@ -355,6 +421,9 @@ class MockDataService {
     let list = this._get('bl_subscriptions');
     if (filter.customerId) {
       list = list.filter(s => s.customerId === filter.customerId);
+    }
+    if (filter.status) {
+      list = list.filter(s => s.status === filter.status);
     }
     return list;
   }
@@ -366,6 +435,11 @@ class MockDataService {
 
   async createSubscriptionFromQuotation(quotation) {
     const list = this._get('bl_subscriptions');
+    const interval = quotation.planInterval || 'MONTHLY';
+    const startDate = new Date().toISOString().split('T')[0];
+    const nextBillingDate = calculateNextBillingDate(startDate, interval);
+
+    // Initial status is CONFIRMED (awaiting explicit activation)
     const newSub = {
       id: `sub-${Date.now().toString().slice(-4)}`,
       subscriptionNumber: `SUB-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -373,30 +447,25 @@ class MockDataService {
       customerName: quotation.customerName,
       planId: quotation.planId,
       planName: quotation.planName,
-      status: 'ACTIVE',
-      startDate: new Date().toISOString().split('T')[0],
-      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      status: 'CONFIRMED',
+      startDate,
+      nextBillingDate,
       recurringAmount: quotation.total,
-      billingInterval: 'MONTHLY',
+      billingInterval: interval,
       autoRenew: true
     };
     list.unshift(newSub);
     this._set('bl_subscriptions', list);
 
-    // Also generate an invoice!
-    await this.createInvoice({
-      subscriptionId: newSub.id,
-      customerId: newSub.customerId,
-      customerName: newSub.customerName,
-      subtotal: quotation.subtotal,
-      taxAmount: quotation.taxAmount,
-      totalAmount: quotation.total,
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    });
-
     return newSub;
   }
 
+  /**
+   * Lifecycle transitions:
+   * CONFIRMED -> ACTIVE
+   * ACTIVE <-> PAUSED
+   * ACTIVE / PAUSED -> CLOSED
+   */
   async updateSubscriptionStatus(id, status) {
     const list = this._get('bl_subscriptions');
     const index = list.findIndex(s => s.id === id);
@@ -406,6 +475,50 @@ class MockDataService {
       return list[index];
     }
     return null;
+  }
+
+  /**
+   * Explicit billing simulation action:
+   * Generates a CONFIRMED invoice for a subscription and advances the next billing date
+   */
+  async generateSubscriptionInvoice(subscriptionId) {
+    const sub = await this.getSubscriptionById(subscriptionId);
+    if (!sub) throw new Error('Subscription not found.');
+
+    const subtotal = Number((sub.recurringAmount * 0.85).toFixed(2));
+    const taxAmount = Number((sub.recurringAmount - subtotal).toFixed(2));
+
+    const newInvoice = await this.createInvoice({
+      subscriptionId: sub.id,
+      customerId: sub.customerId,
+      customerName: sub.customerName,
+      subtotal,
+      taxAmount,
+      totalAmount: sub.recurringAmount,
+      status: 'CONFIRMED',
+      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      billingPeriod: `${sub.startDate} - ${sub.nextBillingDate}`,
+      items: [
+        {
+          id: `item-${Date.now()}`,
+          description: `${sub.planName} (${sub.billingInterval} Service Fee)`,
+          quantity: 1,
+          unitPrice: sub.recurringAmount,
+          taxRate: 18,
+          amount: sub.recurringAmount
+        }
+      ]
+    });
+
+    // Advance next billing date using calendar-aware calculation
+    const subs = this._get('bl_subscriptions');
+    const idx = subs.findIndex(s => s.id === sub.id);
+    if (idx !== -1) {
+      subs[idx].nextBillingDate = calculateNextBillingDate(subs[idx].nextBillingDate, subs[idx].billingInterval);
+      this._set('bl_subscriptions', subs);
+    }
+
+    return newInvoice;
   }
 
   // --- Invoices ---
@@ -430,7 +543,7 @@ class MockDataService {
     const newInvoice = {
       id: `inv-${Date.now().toString().slice(-4)}`,
       invoiceNumber: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      status: 'OPEN',
+      status: invoiceData.status || 'CONFIRMED',
       paidAmount: 0.00,
       balance: invoiceData.totalAmount,
       issueDate: new Date().toISOString().split('T')[0],
@@ -447,9 +560,7 @@ class MockDataService {
     const index = list.findIndex(i => i.id === id || i.invoiceNumber === id);
     if (index !== -1) {
       list[index].status = newStatus;
-      if (newStatus === 'CANCELLED') {
-        list[index].balance = 0.00;
-      }
+      // Do NOT erase outstanding balance on cancellation
       this._set('bl_invoices', list);
       return list[index];
     }
@@ -486,41 +597,66 @@ class MockDataService {
 
   async recordPayment(paymentData) {
     const invoices = this._get('bl_invoices');
-    const invIndex = invoices.findIndex(i => i.id === paymentData.invoiceId || i.invoiceNumber === paymentData.invoiceNumber);
+    const invIndex = invoices.findIndex(
+      i => i.id === paymentData.invoiceId || i.invoiceNumber === paymentData.invoiceNumber
+    );
 
-    if (invIndex !== -1) {
-      const inv = invoices[invIndex];
-      const payAmount = Number(paymentData.amount) || 0;
-      const currentBalance = Number(inv.balance || 0);
-
-      // Reject overpayment in demonstration mode
-      if (payAmount > currentBalance + 0.001) {
-        throw new Error(
-          `Overpayment Rejected: Entered payment of $${payAmount.toFixed(2)} exceeds current outstanding balance of $${currentBalance.toFixed(2)}.`
-        );
-      }
-
-      const newPaid = Number(inv.paidAmount || 0) + payAmount;
-      const newBalance = Math.max(0, Number(inv.totalAmount) - newPaid);
-      inv.paidAmount = Number(newPaid.toFixed(2));
-      inv.balance = Number(newBalance.toFixed(2));
-
-      if (newBalance <= 0.01) {
-        inv.status = 'PAID';
-        inv.paidAt = new Date().toISOString();
-      } else {
-        inv.status = 'PARTIALLY_PAID';
-      }
-      this._set('bl_invoices', invoices);
+    // 1. Verify invoice exists
+    if (invIndex === -1) {
+      throw new Error(`Invoice "${paymentData.invoiceNumber || paymentData.invoiceId}" does not exist. Cannot record payment.`);
     }
 
+    const inv = invoices[invIndex];
+
+    // 2. Verify invoice can receive payment
+    if (inv.status === 'CANCELLED') {
+      throw new Error(`Invoice ${inv.invoiceNumber} is cancelled and cannot receive payments.`);
+    }
+    if (inv.status === 'PAID' || Number(inv.balance || 0) <= 0.001) {
+      throw new Error(`Invoice ${inv.invoiceNumber} has already been settled in full.`);
+    }
+
+    const payAmount = Number(paymentData.amount) || 0;
+    if (payAmount <= 0) {
+      throw new Error('Payment amount must be greater than zero.');
+    }
+
+    const currentBalance = Number(inv.balance || 0);
+
+    // 3. Reject payments exceeding outstanding balance
+    if (payAmount > currentBalance + 0.001) {
+      throw new Error(
+        `Overpayment Rejected: Entered payment of $${payAmount.toFixed(2)} exceeds current outstanding balance of $${currentBalance.toFixed(2)}.`
+      );
+    }
+
+    // 4. Update invoice balance and status
+    const newPaid = Number(inv.paidAmount || 0) + payAmount;
+    const newBalance = Math.max(0, Number(inv.totalAmount) - newPaid);
+    inv.paidAmount = Number(newPaid.toFixed(2));
+    inv.balance = Number(newBalance.toFixed(2));
+
+    if (newBalance <= 0.01) {
+      inv.status = 'PAID';
+      inv.paidAt = new Date().toISOString();
+    } else {
+      inv.status = 'PARTIALLY_PAID';
+    }
+    this._set('bl_invoices', invoices);
+
+    // 5. Preserve payment record
     const list = this._get('bl_payments');
     const newPayment = {
       id: `pay-${Date.now().toString().slice(-4)}`,
       paymentNumber: `PAY-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      paymentDate: new Date().toISOString(),
+      paymentDate: paymentData.paymentDate || new Date().toISOString(),
       status: 'COMPLETED',
-      ...paymentData
+      ...paymentData,
+      amount: payAmount,
+      invoiceId: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      customerId: inv.customerId,
+      customerName: inv.customerName
     };
     list.unshift(newPayment);
     this._set('bl_payments', list);
@@ -528,24 +664,7 @@ class MockDataService {
     return newPayment;
   }
 
-  // --- Taxes & Discounts ---
-  async getTaxes() {
-    return this._get('bl_taxes');
-  }
-
-  async createTax(data) {
-    const list = this._get('bl_taxes');
-    const newTax = {
-      id: `tax-${Date.now().toString().slice(-4)}`,
-      isActive: true,
-      isDefault: false,
-      ...data
-    };
-    list.unshift(newTax);
-    this._set('bl_taxes', list);
-    return newTax;
-  }
-
+  // --- Discounts ---
   async getDiscounts() {
     return this._get('bl_discounts');
   }
@@ -609,15 +728,15 @@ class MockDataService {
 
     const todayStr = new Date().toISOString().split('T')[0];
     if (discount.startDate && discount.startDate > todayStr) {
-      return { eligible: false, message: 'Not yet active. (Begins on ' + discount.startDate + ')' };
+      return { eligible: false, message: `Not yet active. (Begins on ${discount.startDate})` };
     }
 
     if (discount.endDate && discount.endDate < todayStr) {
-      return { eligible: false, message: 'Expired. (Ended on ' + discount.endDate + ')' };
+      return { eligible: false, message: `Expired. (Ended on ${discount.endDate})` };
     }
 
     if (discount.usageLimit && (discount.redemptionsCount || 0) >= discount.usageLimit) {
-      return { eligible: false, message: 'Usage limit exhausted. (Limit of ' + discount.usageLimit + ' reached)' };
+      return { eligible: false, message: `Usage limit exhausted. (Limit of ${discount.usageLimit} reached)` };
     }
 
     if (discount.minPurchase && purchaseAmount < discount.minPurchase) {
@@ -668,12 +787,77 @@ class MockDataService {
     return newStaff;
   }
 
-  // --- Metrics ---
+  // --- Dynamic Dashboard Metrics ---
   async getMetrics() {
-    return DEMO_METRICS;
+    const subscriptions = this._get('bl_subscriptions');
+    const invoices = this._get('bl_invoices');
+    const payments = this._get('bl_payments');
+
+    const activeSubs = subscriptions.filter(s => s.status === 'ACTIVE');
+
+    // Calendar & interval normalized MRR
+    const mrr = activeSubs.reduce((sum, s) => {
+      const amt = Number(s.recurringAmount) || 0;
+      const interval = (s.billingInterval || 'MONTHLY').toUpperCase();
+      if (interval === 'YEARLY' || interval === 'ANNUAL') return sum + (amt / 12);
+      if (interval === 'WEEKLY') return sum + (amt * 4.33);
+      if (interval === 'DAILY') return sum + (amt * 30);
+      return sum + amt;
+    }, 0);
+
+    const arr = mrr * 12;
+
+    const totalRevenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+    const overdueInvoices = invoices.filter(i => isInvoiceOverdue(i));
+    const overdueAmount = overdueInvoices.reduce((sum, i) => sum + (Number(i.balance) || 0), 0);
+
+    // Plan distribution from subscriptions
+    const planCounts = {};
+    subscriptions.forEach(s => {
+      const name = s.planName || 'Standard Plan';
+      planCounts[name] = (planCounts[name] || 0) + 1;
+    });
+
+    const planColors = ['#4F46E5', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6'];
+    const planDistribution = Object.keys(planCounts).map((name, i) => ({
+      name,
+      value: planCounts[name],
+      fill: planColors[i % planColors.length]
+    }));
+
+    // Dynamic 6-month chart
+    const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+    const monthlyRevenueChart = months.map((m, idx) => {
+      const factor = (idx + 1) / months.length;
+      return {
+        month: m,
+        mrr: Math.round(mrr * (0.7 + (factor * 0.3))),
+        revenue: Math.round((totalRevenue / months.length) * (0.8 + (factor * 0.4)))
+      };
+    });
+
+    return {
+      mrr: Number(mrr.toFixed(2)),
+      mrrGrowth: '+14.2%',
+      arr: Number(arr.toFixed(2)),
+      activeSubscriptions: activeSubs.length,
+      subscriptionsGrowth: '+8%',
+      revenueTotal: Number(totalRevenue.toFixed(2)),
+      overdueInvoicesCount: overdueInvoices.length,
+      overdueAmount: Number(overdueAmount.toFixed(2)),
+      monthlyRevenueChart,
+      planDistribution: planDistribution.length > 0 ? planDistribution : DEMO_METRICS.planDistribution,
+      mrrWaterfall: DEMO_METRICS.mrrWaterfall,
+      arAging: [
+        { bucket: 'Current (0-30 Days)', amount: Number((overdueAmount * 0.6).toFixed(2)), count: Math.ceil(overdueInvoices.length * 0.6), percentage: 60, color: '#10B981' },
+        { bucket: 'Past Due (31-60 Days)', amount: Number((overdueAmount * 0.4).toFixed(2)), count: Math.floor(overdueInvoices.length * 0.4), percentage: 40, color: '#F59E0B' },
+        { bucket: 'Delinquent (61-90 Days)', amount: 0.00, count: 0, percentage: 0, color: '#EF4444' },
+        { bucket: 'Default Risk (90+ Days)', amount: 0.00, count: 0, percentage: 0, color: '#991B1B' }
+      ]
+    };
   }
 }
 
 export const mockDataService = new MockDataService();
 export default mockDataService;
-

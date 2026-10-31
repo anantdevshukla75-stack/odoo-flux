@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Tag,
   Plus,
@@ -47,7 +47,7 @@ export function Discounts() {
   });
   const [testResult, setTestResult] = useState(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [dList, pList, plList] = await Promise.all([
       mockDataService.getDiscounts(),
       mockDataService.getProducts(),
@@ -57,17 +57,17 @@ export function Discounts() {
     setProducts(pList);
     setPlans(plList);
 
-    if (pList.length > 0 && !testParams.productId) {
-      setTestParams(prev => ({ ...prev, productId: pList[0].id }));
-    }
-    if (plList.length > 0 && !testParams.planId) {
-      setTestParams(prev => ({ ...prev, planId: plList[0].id }));
-    }
-  };
+    setTestParams(prev => {
+      const next = { ...prev };
+      if (pList.length > 0 && !prev.productId) next.productId = pList[0].id;
+      if (plList.length > 0 && !prev.planId) next.planId = plList[0].id;
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleCreateNew = () => {
     setEditingDiscount(null);

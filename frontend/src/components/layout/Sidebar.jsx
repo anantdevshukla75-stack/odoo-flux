@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import { X } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import {
   ADMIN_NAVIGATION,
   STAFF_NAVIGATION,

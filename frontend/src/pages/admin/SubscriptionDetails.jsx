@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -36,7 +36,7 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
 
   const isCustomerView = location.pathname.startsWith('/customer');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const s = await mockDataService.getSubscriptionById(subscriptionId);
     if (s) {
       setSub(s);
@@ -47,11 +47,11 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
       setPlan(p);
       setInvoices(invList);
     }
-  };
+  }, [subscriptionId]);
 
   useEffect(() => {
     loadData();
-  }, [subscriptionId]);
+  }, [loadData]);
 
   if (!sub) {
     return <LoadingState message="Loading subscription contract details..." />;
@@ -61,6 +61,15 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
     setLoadingAction(true);
     await mockDataService.updateSubscriptionStatus(sub.id, newStatus);
     await loadData();
+    setLoadingAction(false);
+  };
+
+  const handleGenerateInvoice = async () => {
+    setLoadingAction(true);
+    const inv = await mockDataService.generateSubscriptionInvoice(sub.id);
+    if (inv) {
+      await loadData();
+    }
     setLoadingAction(false);
   };
 
@@ -120,6 +129,18 @@ export function SubscriptionDetails({ backPath = '/admin/subscriptions' }) {
               onClick={() => handleAction('ACTIVE')}
             >
               Activate Subscription
+            </Button>
+          )}
+
+          {sub.status === 'ACTIVE' && !isCustomerView && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Receipt}
+              loading={loadingAction}
+              onClick={handleGenerateInvoice}
+            >
+              Generate Due Invoice
             </Button>
           )}
 

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
 
 export function Header({ onToggleMobile }) {
-  const { user, role, switchDemoRole, logout } = useAuth();
+  const { user, role, isDemoMode, switchDemoRole, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleRoleChange = (newRole) => {
@@ -45,48 +45,50 @@ export function Header({ onToggleMobile }) {
         <span className="hidden sm:inline-block text-xs text-slate-400">|</span>
 
         <span className="hidden sm:inline-block text-xs font-medium text-slate-600">
-          Viewing as <strong className="text-slate-900 font-semibold">{role}</strong>
+          Viewing as <strong className="text-slate-900 font-semibold">{user?.fullName || role}</strong> ({role})
         </span>
       </div>
 
       {/* Right: Quick Role Switcher & User Exit */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Role Switcher Pills */}
-        <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200">
-          <button
-            type="button"
-            onClick={() => handleRoleChange(ROLES.ADMIN)}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
-              role === ROLES.ADMIN
-                ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Admin
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoleChange(ROLES.STAFF)}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
-              role === ROLES.STAFF
-                ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Staff
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoleChange(ROLES.CUSTOMER)}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
-              role === ROLES.CUSTOMER
-                ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Customer
-          </button>
-        </div>
+        {/* Role Switcher Pills - only in Demo Mode */}
+        {isDemoMode && (
+          <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => handleRoleChange(ROLES.ADMIN)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                role === ROLES.ADMIN
+                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Admin
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange(ROLES.STAFF)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                role === ROLES.STAFF
+                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Staff
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange(ROLES.CUSTOMER)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                role === ROLES.CUSTOMER
+                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Customer
+            </button>
+          </div>
+        )}
 
         {/* Exit Button */}
         <button

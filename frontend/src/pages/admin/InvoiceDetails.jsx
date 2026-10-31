@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -26,7 +26,7 @@ import RecordPaymentForm from './RecordPaymentForm.jsx';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate, formatDateTime } from '../../utils/formatDate.js';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 
 export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   const { invoiceId } = useParams();
@@ -46,7 +46,7 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
   const [isCustomerPayModalOpen, setIsCustomerPayModalOpen] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     const inv = await mockDataService.getInvoiceById(invoiceId);
     if (inv) {
@@ -63,11 +63,11 @@ export function InvoiceDetails({ backPath = '/admin/invoices' }) {
       setPayments(payList);
     }
     setIsLoading(false);
-  };
+  }, [invoiceId]);
 
   useEffect(() => {
     loadData();
-  }, [invoiceId]);
+  }, [loadData]);
 
   const showDemoNotice = (message) => {
     setDemoFeedback(message);

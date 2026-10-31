@@ -59,7 +59,7 @@ export function Register() {
       await login(formData.email, formData.password);
       navigate('/customer/dashboard');
     } catch (err) {
-      setError('Registration could not be completed.');
+      setError(err.message || 'Registration could not be completed.');
     } finally {
       setLoading(false);
     }

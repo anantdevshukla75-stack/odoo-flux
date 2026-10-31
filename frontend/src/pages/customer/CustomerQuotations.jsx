@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FileText,
   Check,
@@ -16,27 +16,34 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
+import LoadingState from '../../components/common/LoadingState.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerQuotations() {
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [quotations, setQuotations] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState(null);
 
-  const loadQuotations = async () => {
+  const loadQuotations = useCallback(async () => {
     setLoading(true);
-    const list = await mockDataService.getQuotations({ customerId: 'cust-001' });
+    const customerId = user?.customerId || user?.id || 'cust-001';
+    const list = await mockDataService.getQuotations({ customerId });
     setQuotations(list);
     setLoading(false);
-  };
+  }, [user]);
 
   useEffect(() => {
     loadQuotations();
-  }, []);
+  }, [loadQuotations]);
+
+  if (loading) {
+    return <LoadingState message="Loading your commercial proposals..." />;
+  }
 
   const handleDecision = async (quotation, decision) => {
     const newStatus = decision === 'ACCEPT' ? 'ACCEPTED' : 'CANCELLED';

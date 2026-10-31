@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -40,7 +40,7 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
     billingAddress: ''
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const details = await mockDataService.getCustomerDetails(customerId);
     if (details) {
       setData(details);
@@ -52,11 +52,11 @@ export function CustomerDetails({ backPath = '/admin/customers' }) {
         billingAddress: details.customer.billingAddress || ''
       });
     }
-  };
+  }, [customerId]);
 
   useEffect(() => {
     loadData();
-  }, [customerId]);
+  }, [loadData]);
 
   if (!data) {
     return <LoadingState message="Loading customer account profile..." />;

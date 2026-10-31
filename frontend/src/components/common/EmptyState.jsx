@@ -7,12 +7,15 @@ export function EmptyState({
   message = 'There are no items to display at this time.',
   actionLabel,
   onAction,
-  icon: Icon = Inbox
+  Icon = Inbox,
+  icon
 }) {
+  const RenderIcon = icon || Icon;
+
   return (
     <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
       <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
-        <Icon className="w-6 h-6" />
+        <RenderIcon className="w-6 h-6" />
       </div>
       <h3 className="text-sm font-semibold text-slate-800 mb-1">{title}</h3>
       <p className="text-xs text-slate-500 max-w-sm mb-4 leading-relaxed">{message}</p>

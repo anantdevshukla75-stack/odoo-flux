@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Eye, Search, FileText, Filter, Calendar } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../context/useAuth.js';
 import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
@@ -22,18 +22,19 @@ export function Quotations({ basePath = '/admin/quotations' }) {
 
   const isCustomer = role === 'CUSTOMER' || location.pathname.startsWith('/customer');
 
-  const loadQuotations = async () => {
+  const loadQuotations = useCallback(async () => {
     const list = await mockDataService.getQuotations();
     if (isCustomer) {
-      setQuotations(list.filter(q => q.customerId === 'cust-001'));
+      const custId = user?.customerId || user?.id || 'cust-001';
+      setQuotations(list.filter(q => q.customerId === custId));
     } else {
       setQuotations(list);
     }
-  };
+  }, [isCustomer, user]);
 
   useEffect(() => {
     loadQuotations();
-  }, [isCustomer]);
+  }, [loadQuotations]);
 
   const filteredQuotations = useMemo(() => {
     return quotations.filter((q) => {

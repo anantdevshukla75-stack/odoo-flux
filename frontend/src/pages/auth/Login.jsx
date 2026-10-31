@@ -30,7 +30,7 @@ export function Login() {
         navigate('/customer/dashboard');
       }
     } catch (err) {
-      setError('Invalid credentials. Please select one of the demonstration roles below.');
+      setError(err.message || 'Invalid credentials. Please select one of the demonstration roles below.');
     } finally {
       setLoading(false);
     }

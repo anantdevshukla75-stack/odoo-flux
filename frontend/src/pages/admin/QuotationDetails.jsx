@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -33,14 +33,14 @@ export function QuotationDetails({ backPath = '/admin/quotations' }) {
 
   const isCustomerView = location.pathname.startsWith('/customer');
 
-  const loadQuote = async () => {
+  const loadQuote = useCallback(async () => {
     const q = await mockDataService.getQuotationById(quotationId);
     setQuote(q);
-  };
+  }, [quotationId]);
 
   useEffect(() => {
     loadQuote();
-  }, [quotationId]);
+  }, [loadQuote]);
 
   if (!quote) {
     return <LoadingState message="Loading commercial proposal details..." />;
