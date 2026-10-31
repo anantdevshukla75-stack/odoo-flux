@@ -8,7 +8,7 @@
 
 All endpoints below are relative to this base path.
 
-> **Implementation status:** Authentication, Products, and Plans are implemented. Remaining modules will follow the same `/api/v1` prefix.
+> **Implementation status:** Authentication, Products, Plans, Customers, and Subscriptions are implemented. Remaining modules will follow the same `/api/v1` prefix.
 
 ## Conventions
 
@@ -422,6 +422,229 @@ Accepts any subset of the create fields. Omitted fields are left unchanged.
 | `404` | Plan not found |
 | `422` | Validation failed (including `end_date < start_date`) |
 
+## Customers
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/customers` | Staff/Admin | `200` | List customer profiles |
+| `GET` | `/customers/me` | Bearer | `200` | Current user's customer profile |
+| `GET` | `/customers/{id}` | Owner or Staff/Admin | `200` | Get a customer profile |
+| `PATCH` | `/customers/{id}` | Owner or Staff/Admin | `200` | Update a customer profile |
+
+There is no `POST /customers`: a profile row is created automatically when a user registers.
+
+### Customer object
+
+`CustomerResponse`
+
+```json
+{
+  "id": 2,
+  "user_id": 18,
+  "email": "customer@example.com",
+  "full_name": "Customer User",
+  "company_name": "Acme",
+  "phone": "+1 555 0100",
+  "billing_address": "1 Main Street",
+  "tax_number": "TAX-123",
+  "created_at": "2026-10-31T06:37:02.061698Z"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Primary key |
+| `user_id` | integer | Owning user |
+| `email` | string | Read-only, from the user account |
+| `full_name` | string | Read-only, from the user account |
+| `company_name` | string \| null | Optional |
+| `phone` | string \| null | Optional |
+| `billing_address` | string \| null | Optional |
+| `tax_number` | string \| null | Optional |
+| `created_at` | datetime | ISO 8601 UTC |
+
+### List customers
+
+`GET /customers` · Bearer, role `staff` or `admin` · `200`
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `offset` | integer | `0` | Rows to skip |
+| `limit` | integer | `100` | Page size, 1–500 |
+
+Returns `CustomerResponse[]` ordered by `id`. Customers receive `403`.
+
+### My profile
+
+`GET /customers/me` · Bearer · `200`
+
+Returns the `CustomerResponse` linked to the authenticated user. Admin and staff accounts have no customer profile and receive `404`.
+
+### Get / update customer
+
+`GET /customers/{id}` · Bearer · `200`  
+`PATCH /customers/{id}` · Bearer · `200`
+
+Customers can only read and update their own profile; staff and admin can access any. `PATCH` accepts any subset of `company_name`, `phone`, `billing_address`, `tax_number`; all of them can be cleared with `null`.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Profile returned or updated |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not the owner and not staff/admin |
+| `404` | Customer not found |
+| `422` | Validation failed |
+
+## Subscriptions
+
+| Method | Endpoint | Auth | Success | Purpose |
+| --- | --- | --- | --- | --- |
+| `GET` | `/subscriptions` | Bearer | `200` | List subscriptions |
+| `POST` | `/subscriptions` | Staff/Admin | `201` | Create a subscription |
+| `GET` | `/subscriptions/{id}` | Owner or Staff/Admin | `200` | Get a subscription |
+| `PATCH` | `/subscriptions/{id}` | Staff/Admin | `200` | Update billing fields |
+| `POST` | `/subscriptions/{id}/confirm` | Staff/Admin | `200` | `draft`/`quotation` → `confirmed` |
+| `POST` | `/subscriptions/{id}/activate` | Staff/Admin | `200` | `confirmed`/`paused` → `active` |
+| `POST` | `/subscriptions/{id}/pause` | Staff/Admin | `200` | `active` → `paused` |
+| `POST` | `/subscriptions/{id}/close` | Staff/Admin | `200` | `confirmed`/`active`/`paused` → `closed` |
+
+Customers only ever see their own subscriptions, even if they pass another `customer_id`. Staff and admin see everything.
+
+### Subscription object
+
+`SubscriptionResponse`
+
+```json
+{
+  "id": 2,
+  "subscription_number": "SUB-000002",
+  "customer_id": 2,
+  "plan_id": 1,
+  "start_date": "2026-01-31",
+  "expiry_date": null,
+  "next_billing_date": "2026-02-28",
+  "payment_terms_days": 0,
+  "status": "draft",
+  "created_at": "2026-10-31T07:07:01.659484Z",
+  "lines": [
+    { "id": 3, "product_id": 1, "quantity": 1, "unit_price": "49.00", "tax_rate": "0.00" },
+    { "id": 4, "product_id": 2, "quantity": 1, "unit_price": "99.00", "tax_rate": "0.00" }
+  ]
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `subscription_number` | string | Generated as `SUB-{id:06d}` |
+| `customer_id` | integer | Customer profile |
+| `plan_id` | integer | Source plan |
+| `start_date` | date | Billing start |
+| `expiry_date` | date \| null | Copied from `plan.end_date` on create |
+| `next_billing_date` | date \| null | `start_date` + one billing interval; cleared on close |
+| `payment_terms_days` | integer | ≥ 0, default `0` |
+| `status` | enum | `draft` / `quotation` / `confirmed` / `active` / `paused` / `closed` |
+| `lines` | array | Price snapshot, see below |
+
+`SubscriptionLine`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Read-only |
+| `product_id` | integer | Product from the plan line |
+| `quantity` | integer | Copied from the plan line |
+| `unit_price` | decimal string | Copied from the plan line |
+| `tax_rate` | decimal string | Default `0.00`, kept for later tax support |
+
+### List subscriptions
+
+`GET /subscriptions` · Bearer · `200`
+
+| Query | Type | Default | Description |
+| --- | --- | --- | --- |
+| `customer_id` | integer | — | Filter by customer (ignored for customers, who are always scoped to themselves) |
+| `status` | enum | — | Filter by subscription status |
+| `offset` | integer | `0` | Rows to skip |
+| `limit` | integer | `100` | Page size, 1–500 |
+
+Returns `SubscriptionResponse[]`, newest first, with lines included.
+
+### Create subscription
+
+`POST /subscriptions` · Bearer, role `staff` or `admin` · `201`
+
+`SubscriptionCreate`
+
+```json
+{
+  "customer_id": 2,
+  "plan_id": 1,
+  "start_date": "2026-01-31",
+  "payment_terms_days": 0
+}
+```
+
+The plan's lines are copied into the subscription as a price snapshot, so later product or plan price changes do not affect existing subscriptions.
+
+- `subscription_number` is assigned after insert as `SUB-{id:06d}`.
+- `expiry_date` is copied from `plan.end_date`.
+- `next_billing_date` is `start_date` plus the plan's interval, with month-end clamping (Jan 31 + 1 month = Feb 28).
+- `status` starts as `draft`.
+- The plan must be active and must not end before `start_date`.
+- Every plan line must satisfy the plan's `minimum_quantity`.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Subscription created |
+| `400` | Plan inactive, plan ended, plan has no lines, or quantity below minimum |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `404` | Customer or plan not found |
+| `422` | Validation failed |
+
+### Update subscription
+
+`PATCH /subscriptions/{id}` · Bearer, role `staff` or `admin` · `200`
+
+Accepts any subset of:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `expiry_date` | date \| null | Must be on or after `start_date`; `null` clears it |
+| `next_billing_date` | date \| null | `null` clears it |
+| `payment_terms_days` | integer | ≥ 0 |
+
+Status is not editable here; use the lifecycle endpoints.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Updated |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `404` | Subscription not found |
+| `422` | Validation failed, including `expiry_date < start_date` |
+
+### Lifecycle
+
+Allowed status changes:
+
+| Action | From | To | Extra rule |
+| --- | --- | --- | --- |
+| `confirm` | `draft`, `quotation` | `confirmed` | — |
+| `activate` | `confirmed`, `paused` | `active` | Also resumes a paused subscription |
+| `pause` | `active` | `paused` | Plan must have `allow_pause = true` |
+| `close` | `confirmed`, `active`, `paused` | `closed` | Clears `next_billing_date` |
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Status updated, returns the subscription |
+| `400` | Plan disallows the change (for example pausing without `allow_pause`) |
+| `401` | Missing or invalid access token |
+| `403` | Caller is not staff/admin |
+| `404` | Subscription not found |
+| `409` | Transition not allowed from the current status |
+
+> `auto_close`, `allow_early_close`, and `allow_renewal` are stored on plans but not enforced yet.
+
 ## JWT
 
 Access token payload:
@@ -462,10 +685,8 @@ Refresh token payload:
 
 The remaining modules from [PRD §9](PRD.md#9-api-endpoints) are not implemented yet:
 
-- Customers
 - Product variants
 - Quotation templates
-- Subscriptions
 - Invoices and billing
 - Payments
 - Taxes and discounts
