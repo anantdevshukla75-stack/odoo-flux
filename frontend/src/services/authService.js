@@ -145,3 +145,19 @@ export async function resetPassword(token, newPassword) {
     new_password: newPassword
   });
 }
+
+// Object-style compatibility for the shared API-backed staff and recovery
+// screens already present on main.
+export const authService = {
+  async createStaff({ full_name, email, password }) {
+    return apiClient.post('/auth/staff', {
+      full_name: full_name.trim(),
+      email: email.trim(),
+      password
+    });
+  },
+  forgotPassword: requestPasswordReset,
+  resetPassword
+};
+
+export default authService;
