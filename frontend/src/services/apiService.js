@@ -46,6 +46,20 @@ const rawSubscriptions = (params) => apiClient.get('/subscriptions', params);
 const rawInvoices = (params) => apiClient.get('/invoices', params);
 const rawPayments = (params) => apiClient.get('/payments', params);
 
+export async function getDashboardSummary(asOf) {
+  const response = await apiClient.get('/dashboard/summary', asOf ? { as_of: asOf } : undefined);
+
+  return {
+    asOf: response.as_of,
+    activeSubscriptions: Number(response.active_subscriptions) || 0,
+    totalInvoiced: toNumber(response.total_invoiced),
+    totalCollected: toNumber(response.total_collected),
+    outstandingAmount: toNumber(response.outstanding_amount),
+    overdueInvoices: Number(response.overdue_invoices) || 0,
+    overdueAmount: toNumber(response.overdue_amount)
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Normalizers                                                                */
 /* -------------------------------------------------------------------------- */
@@ -662,6 +676,7 @@ export async function togglePlanStatus(id) {
 }
 
 export const apiService = {
+  getDashboardSummary,
   getCustomers,
   getCustomerById,
   getCustomerDetails,

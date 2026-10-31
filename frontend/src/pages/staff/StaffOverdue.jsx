@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   AlertTriangle,
-  Mail,
   DollarSign,
   CheckCircle,
   Eye,
   Calendar,
-  Clock,
-  ShieldAlert,
-  Filter
+  Clock
 } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
@@ -17,7 +14,7 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import RecordPaymentForm from '../admin/RecordPaymentForm.jsx';
-import { mockDataService } from '../../services/mockDataService.js';
+import { apiService } from '../../services/apiService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
@@ -26,19 +23,11 @@ export function StaffOverdue() {
   const [invoices, setInvoices] = useState([]);
   const [agingFilter, setAgingFilter] = useState('ALL');
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [reminderSent, setReminderSent] = useState({});
-  const [demoNotice, setDemoNotice] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   const loadData = async () => {
-    const list = await mockDataService.getInvoices();
-    // Overdue includes status === 'OVERDUE' or any invoice with balance > 0 and dueDate in past
-    const today = new Date();
-    const overdueList = list.filter(i => {
-      if (i.status === 'CANCELLED' || i.status === 'PAID') return false;
-      const isPastDue = new Date(i.dueDate) < today;
-      return i.status === 'OVERDUE' || (i.balance > 0 && isPastDue);
-    });
-    setInvoices(overdueList);
+    const overdueInvoices = await apiService.getInvoices({ status: 'OVERDUE' });
+    setInvoices(overdueInvoices.filter((invoice) => invoice.balance > 0));
   };
 
   useEffect(() => {
@@ -50,12 +39,6 @@ export function StaffOverdue() {
     const now = new Date();
     const diff = Math.floor((now - due) / (1000 * 60 * 60 * 24));
     return Math.max(1, diff);
-  };
-
-  const handleSendReminder = (inv) => {
-    setReminderSent(prev => ({ ...prev, [inv.id]: true }));
-    setDemoNotice(`Demonstration action: Dunning email notice simulated for ${inv.invoiceNumber} to ${inv.customerName}. No real external email was sent.`);
-    setTimeout(() => setDemoNotice(null), 5000);
   };
 
   // Filter based on days overdue
@@ -141,16 +124,6 @@ export function StaffOverdue() {
           </Button>
 
           <Button
-            variant="secondary"
-            size="sm"
-            icon={reminderSent[row.id] ? CheckCircle : Mail}
-            onClick={() => handleSendReminder(row)}
-            disabled={reminderSent[row.id]}
-          >
-            {reminderSent[row.id] ? 'Reminded' : 'Send Dunning'}
-          </Button>
-
-          <Button
             variant="primary"
             size="sm"
             icon={DollarSign}
@@ -167,18 +140,18 @@ export function StaffOverdue() {
     <div className="space-y-6">
       <PageHeader
         title="Overdue Accounts & Collections"
-        description="Monitor aged receivables, issue dunning notices, and record delinquent payments."
+        description="Review aged receivables and record payments against overdue invoices."
       />
 
-      {demoNotice && (
+      {notice && (
         <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-900 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span>{demoNotice}</span>
+            <span>{notice}</span>
           </div>
           <button
             type="button"
-            onClick={() => setDemoNotice(null)}
+            onClick={() => setNotice(null)}
             className="text-indigo-700 hover:text-indigo-950 font-bold ml-2 cursor-pointer"
           >
             ✕
@@ -205,9 +178,9 @@ export function StaffOverdue() {
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Collection Rate (MTD)</div>
-          <div className="text-2xl font-bold text-emerald-600 mt-1">94.8%</div>
-          <div className="text-xs text-emerald-700 font-medium mt-1">Settled within grace threshold</div>
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Overdue Invoices</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{invoices.length}</div>
+          <div className="text-xs text-slate-500 mt-1">Current open invoices past due</div>
         </div>
       </div>
 
@@ -254,7 +227,7 @@ export function StaffOverdue() {
             onSuccess={() => {
               setSelectedInvoice(null);
               loadData();
-              setDemoNotice(`Payment successfully posted for ${selectedInvoice.invoiceNumber}. Balance updated.`);
+              setNotice(`Payment recorded for ${selectedInvoice.invoiceNumber}.`);
             }}
             onCancel={() => setSelectedInvoice(null)}
           />
