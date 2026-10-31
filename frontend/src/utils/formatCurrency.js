@@ -22,3 +22,4 @@ export function formatCurrency(amount, currency = 'USD') {
 }
 
 export default formatCurrency;
+

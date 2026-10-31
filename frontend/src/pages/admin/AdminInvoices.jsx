@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, DollarSign, Download, Filter } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Receipt, DollarSign, Download, Filter, Eye } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
@@ -11,7 +12,8 @@ import { mockDataService } from '../../services/mockDataService.js';
 import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
-export function AdminInvoices() {
+export function AdminInvoices({ basePath = '/admin/invoices' }) {
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -69,7 +71,12 @@ export function AdminInvoices() {
       header: 'Invoice #',
       render: (row) => (
         <div>
-          <div style={{ fontWeight: 600 }}>{row.invoiceNumber}</div>
+          <Link
+            to={`${basePath}/${row.id}`}
+            style={{ fontWeight: 600, color: 'var(--primary)', textDecoration: 'none' }}
+          >
+            {row.invoiceNumber}
+          </Link>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
             Issued {formatDate(row.issueDate)}
           </div>
@@ -116,6 +123,14 @@ export function AdminInvoices() {
       header: 'Actions',
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.375rem' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Eye}
+            onClick={() => navigate(`${basePath}/${row.id}`)}
+          >
+            View
+          </Button>
           {row.balance > 0 && (
             <Button
               variant="primary"
@@ -130,7 +145,7 @@ export function AdminInvoices() {
             variant="secondary"
             size="sm"
             icon={Download}
-            onClick={() => alert(`Simulating PDF download for ${row.invoiceNumber}`)}
+            onClick={() => navigate(`${basePath}/${row.id}`)}
           >
             PDF
           </Button>
@@ -243,3 +258,4 @@ export function AdminInvoices() {
 }
 
 export default AdminInvoices;
+

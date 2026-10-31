@@ -10,6 +10,7 @@ import {
   DEMO_CUSTOMERS,
   DEMO_PRODUCTS,
   DEMO_PLANS,
+  DEMO_QUOTATION_TEMPLATES,
   DEMO_TAXES,
   DEMO_DISCOUNTS,
   DEMO_QUOTATIONS,
@@ -34,6 +35,9 @@ class MockDataService {
     }
     if (!localStorage.getItem('bl_plans')) {
       localStorage.setItem('bl_plans', JSON.stringify(DEMO_PLANS));
+    }
+    if (!localStorage.getItem('bl_quotation_templates')) {
+      localStorage.setItem('bl_quotation_templates', JSON.stringify(DEMO_QUOTATION_TEMPLATES));
     }
     if (!localStorage.getItem('bl_taxes')) {
       localStorage.setItem('bl_taxes', JSON.stringify(DEMO_TAXES));
@@ -81,6 +85,29 @@ class MockDataService {
     return list.find(c => c.id === id || c.userId === id) || null;
   }
 
+  async getCustomerDetails(id) {
+    const customer = await this.getCustomerById(id);
+    if (!customer) return null;
+
+    const subscriptions = await this.getSubscriptions({ customerId: customer.id });
+    const invoices = await this.getInvoices({ customerId: customer.id });
+    const quotations = await this.getQuotations({ customerId: customer.id });
+    const payments = await this.getPayments({ customerId: customer.id });
+
+    const outstandingBalance = invoices.reduce((acc, inv) => acc + (Number(inv.balance) || 0), 0);
+    const totalPayments = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+
+    return {
+      customer,
+      subscriptions,
+      invoices,
+      quotations,
+      payments,
+      outstandingBalance,
+      totalPayments
+    };
+  }
+
   async createCustomer(customerData) {
     const list = this._get('bl_customers');
     const newCustomer = {
@@ -101,6 +128,11 @@ class MockDataService {
     return this._get('bl_products');
   }
 
+  async getProductById(id) {
+    const list = this._get('bl_products');
+    return list.find(p => p.id === id) || null;
+  }
+
   async createProduct(productData) {
     const list = this._get('bl_products');
     const newProduct = {
@@ -114,9 +146,36 @@ class MockDataService {
     return newProduct;
   }
 
+  async updateProduct(id, productData) {
+    const list = this._get('bl_products');
+    const index = list.findIndex(p => p.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...productData };
+      this._set('bl_products', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async toggleProductStatus(id) {
+    const list = this._get('bl_products');
+    const index = list.findIndex(p => p.id === id);
+    if (index !== -1) {
+      list[index].isActive = !list[index].isActive;
+      this._set('bl_products', list);
+      return list[index];
+    }
+    return null;
+  }
+
   // --- Plans ---
   async getPlans() {
     return this._get('bl_plans');
+  }
+
+  async getPlanById(id) {
+    const list = this._get('bl_plans');
+    return list.find(p => p.id === id) || null;
   }
 
   async createPlan(planData) {
@@ -135,6 +194,107 @@ class MockDataService {
     return newPlan;
   }
 
+  async updatePlan(id, planData) {
+    const list = this._get('bl_plans');
+    const index = list.findIndex(p => p.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...planData };
+      this._set('bl_plans', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async togglePlanStatus(id) {
+    const list = this._get('bl_plans');
+    const index = list.findIndex(p => p.id === id);
+    if (index !== -1) {
+      list[index].isActive = !list[index].isActive;
+      this._set('bl_plans', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  // --- Taxes ---
+  async getTaxes() {
+    return this._get('bl_taxes');
+  }
+
+  async getTaxById(id) {
+    const list = this._get('bl_taxes');
+    return list.find(t => t.id === id) || null;
+  }
+
+  async createTax(data) {
+    const list = this._get('bl_taxes');
+    const newTax = {
+      id: `tax-${Date.now().toString().slice(-4)}`,
+      isActive: true,
+      isDefault: false,
+      ...data
+    };
+    list.unshift(newTax);
+    this._set('bl_taxes', list);
+    return newTax;
+  }
+
+  async updateTax(id, taxData) {
+    const list = this._get('bl_taxes');
+    const index = list.findIndex(t => t.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...taxData };
+      this._set('bl_taxes', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  async toggleTaxStatus(id) {
+    const list = this._get('bl_taxes');
+    const index = list.findIndex(t => t.id === id);
+    if (index !== -1) {
+      list[index].isActive = !list[index].isActive;
+      this._set('bl_taxes', list);
+      return list[index];
+    }
+    return null;
+  }
+
+  // --- Quotation Templates ---
+  async getQuotationTemplates() {
+    return this._get('bl_quotation_templates');
+  }
+
+  async getQuotationTemplateById(id) {
+    const list = this._get('bl_quotation_templates');
+    return list.find(t => t.id === id) || null;
+  }
+
+  async createQuotationTemplate(data) {
+    const list = this._get('bl_quotation_templates');
+    const newTmpl = {
+      id: `tmpl-${Date.now().toString().slice(-4)}`,
+      productLines: [],
+      validityDays: 30,
+      ...data
+    };
+    list.unshift(newTmpl);
+    this._set('bl_quotation_templates', list);
+    return newTmpl;
+  }
+
+  async updateQuotationTemplate(id, data) {
+    const list = this._get('bl_quotation_templates');
+    const index = list.findIndex(t => t.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...data };
+      this._set('bl_quotation_templates', list);
+      return list[index];
+    }
+    return null;
+  }
+
   // --- Quotations ---
   async getQuotations(filter = {}) {
     let list = this._get('bl_quotations');
@@ -142,6 +302,11 @@ class MockDataService {
       list = list.filter(q => q.customerId === filter.customerId);
     }
     return list;
+  }
+
+  async getQuotationById(id) {
+    const list = this._get('bl_quotations');
+    return list.find(q => q.id === id || q.quotationNumber === id) || null;
   }
 
   async createQuotation(data) {
@@ -181,6 +346,11 @@ class MockDataService {
       list = list.filter(s => s.customerId === filter.customerId);
     }
     return list;
+  }
+
+  async getSubscriptionById(id) {
+    const list = this._get('bl_subscriptions');
+    return list.find(s => s.id === id || s.subscriptionNumber === id) || null;
   }
 
   async createSubscriptionFromQuotation(quotation) {
@@ -239,6 +409,11 @@ class MockDataService {
     return list;
   }
 
+  async getInvoiceById(id) {
+    const list = this._get('bl_invoices');
+    return list.find(i => i.id === id || i.invoiceNumber === id) || null;
+  }
+
   async createInvoice(invoiceData) {
     const list = this._get('bl_invoices');
     const newInvoice = {
@@ -262,7 +437,15 @@ class MockDataService {
     if (filter.customerId) {
       list = list.filter(p => p.customerId === filter.customerId);
     }
+    if (filter.invoiceId) {
+      list = list.filter(p => p.invoiceId === filter.invoiceId);
+    }
     return list;
+  }
+
+  async getPaymentById(id) {
+    const list = this._get('bl_payments');
+    return list.find(p => p.id === id || p.paymentNumber === id) || null;
   }
 
   async recordPayment(paymentData) {
@@ -358,3 +541,4 @@ class MockDataService {
 
 export const mockDataService = new MockDataService();
 export default mockDataService;
+

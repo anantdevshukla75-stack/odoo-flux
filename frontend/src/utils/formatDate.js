@@ -30,3 +30,4 @@ export function formatDateTime(dateInput) {
 }
 
 export default formatDate;
+

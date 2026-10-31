@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import EmptyState from './EmptyState.jsx';
 import Button from './Button.jsx';
+import LoadingState from './LoadingState.jsx';
 
 export function DataTable({
   columns = [],
@@ -9,6 +10,7 @@ export function DataTable({
   searchKey = '',
   searchPlaceholder = 'Search records...',
   pageSize = 8,
+  loading = false,
   emptyMessage = 'No records found'
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,41 +44,56 @@ export function DataTable({
   };
 
   return (
-    <div className="table-container">
-      <div className="table-toolbar">
-        <div className="table-search-input">
-          <Search className="table-search-icon" />
+    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Toolbar */}
+      <div className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 bg-white">
+        <div className="relative max-w-xs w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            className="form-input"
+            className="w-full pl-9 pr-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-150"
             value={searchTerm}
             onChange={handleSearchChange}
             placeholder={searchPlaceholder}
           />
         </div>
 
-        <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-          Showing <strong>{filteredData.length}</strong> entries
+        <div className="text-xs text-slate-500">
+          Showing <span className="font-semibold text-slate-700">{filteredData.length}</span> results
         </div>
       </div>
 
-      <div className="data-table-wrapper">
-        <table className="data-table">
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
           <thead>
-            <tr>
+            <tr className="bg-slate-50/80 border-b border-slate-200">
               {columns.map((col, idx) => (
-                <th key={idx} style={col.width ? { width: col.width } : {}}>
+                <th
+                  key={idx}
+                  className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap"
+                  style={col.width ? { width: col.width } : {}}
+                >
                   {col.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
-            {paginatedData.length > 0 ? (
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="p-8">
+                  <LoadingState message="Loading records..." />
+                </td>
+              </tr>
+            ) : paginatedData.length > 0 ? (
               paginatedData.map((row, rowIdx) => (
-                <tr key={row.id || rowIdx}>
+                <tr
+                  key={row.id || rowIdx}
+                  className="hover:bg-slate-50/70 transition-colors duration-150"
+                >
                   {columns.map((col, colIdx) => (
-                    <td key={colIdx}>
+                    <td key={colIdx} className="px-6 py-4 align-middle text-slate-800">
                       {col.render
                         ? col.render(row)
                         : row[col.accessor] ?? '—'}
@@ -86,7 +103,7 @@ export function DataTable({
               ))
             ) : (
               <tr>
-                <td colSpan={columns.length} style={{ padding: '2rem' }}>
+                <td colSpan={columns.length} className="p-8">
                   <EmptyState message={emptyMessage} />
                 </td>
               </tr>
@@ -95,12 +112,14 @@ export function DataTable({
         </table>
       </div>
 
+      {/* Pagination Footer */}
       {totalPages > 1 && (
-        <div className="table-pagination">
+        <div className="px-6 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
           <div>
-            Page {currentPage} of {totalPages}
+            Page <span className="font-medium text-slate-800">{currentPage}</span> of{' '}
+            <span className="font-medium text-slate-800">{totalPages}</span>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
@@ -108,7 +127,7 @@ export function DataTable({
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               icon={ChevronLeft}
             >
-              Prev
+              Previous
             </Button>
             <Button
               variant="secondary"

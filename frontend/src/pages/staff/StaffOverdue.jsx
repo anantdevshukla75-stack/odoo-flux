@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Mail, DollarSign, CheckCircle } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { AlertTriangle, Mail, DollarSign, CheckCircle, Eye } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
@@ -12,6 +13,7 @@ import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function StaffOverdue() {
+  const navigate = useNavigate();
   const [overdueInvoices, setOverdueInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [reminderSent, setReminderSent] = useState({});
@@ -69,9 +71,12 @@ export function StaffOverdue() {
     {
       header: 'Invoice #',
       render: (row) => (
-        <span style={{ fontWeight: 600, color: 'var(--danger)' }}>
+        <Link
+          to={`/staff/invoices/${row.id}`}
+          style={{ fontWeight: 600, color: 'var(--danger)', textDecoration: 'none' }}
+        >
           {row.invoiceNumber}
-        </span>
+        </Link>
       )
     },
     {
@@ -98,6 +103,15 @@ export function StaffOverdue() {
       header: 'Resolution Actions',
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Eye}
+            onClick={() => navigate(`/staff/invoices/${row.id}`)}
+          >
+            View
+          </Button>
+
           <Button
             variant="secondary"
             size="sm"
@@ -199,3 +213,4 @@ export function StaffOverdue() {
 }
 
 export default StaffOverdue;
+

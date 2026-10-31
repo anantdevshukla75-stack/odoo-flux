@@ -1,21 +1,24 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
 
-export function LoadingState({ message = 'Loading data...' }) {
+export function LoadingState({ message = 'Loading data...', variant = 'spinner' }) {
+  if (variant === 'skeleton') {
+    return (
+      <div className="w-full space-y-3 p-4 animate-pulse">
+        <div className="h-6 bg-slate-200 rounded-md w-1/4"></div>
+        <div className="space-y-2">
+          <div className="h-4 bg-slate-100 rounded-md"></div>
+          <div className="h-4 bg-slate-100 rounded-md w-5/6"></div>
+          <div className="h-4 bg-slate-100 rounded-md w-4/6"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '3rem',
-        gap: '0.75rem',
-        color: 'var(--text-secondary)'
-      }}
-    >
-      <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
-      <span style={{ fontSize: '0.875rem' }}>{message}</span>
+    <div className="flex flex-col items-center justify-center p-12 text-slate-400 gap-2.5">
+      <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+      <span className="text-xs font-medium text-slate-500">{message}</span>
     </div>
   );
 }

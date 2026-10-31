@@ -20,3 +20,4 @@ export function ProtectedRoute({ allowedRoles = [] }) {
 }
 
 export default ProtectedRoute;
+

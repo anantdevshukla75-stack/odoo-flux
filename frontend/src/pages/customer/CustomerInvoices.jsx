@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Receipt, CreditCard } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Download, Receipt, CreditCard, Eye } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
@@ -9,6 +10,7 @@ import { formatCurrency } from '../../utils/formatCurrency.js';
 import { formatDate } from '../../utils/formatDate.js';
 
 export function CustomerInvoices() {
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
 
   const loadInvoices = async () => {
@@ -39,7 +41,12 @@ export function CustomerInvoices() {
     {
       header: 'Invoice #',
       render: (row) => (
-        <span style={{ fontWeight: 600 }}>{row.invoiceNumber}</span>
+        <Link
+          to={`/customer/invoices/${row.id}`}
+          style={{ fontWeight: 600, color: 'var(--primary)', textDecoration: 'none' }}
+        >
+          {row.invoiceNumber}
+        </Link>
       )
     },
     {
@@ -72,12 +79,20 @@ export function CustomerInvoices() {
       header: 'Actions',
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.375rem' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Eye}
+            onClick={() => navigate(`/customer/invoices/${row.id}`)}
+          >
+            View
+          </Button>
           {row.balance > 0 && (
             <Button
               variant="primary"
               size="sm"
               icon={CreditCard}
-              onClick={() => handlePayNow(row)}
+              onClick={() => navigate(`/customer/invoices/${row.id}`)}
             >
               Pay Now
             </Button>
@@ -86,7 +101,7 @@ export function CustomerInvoices() {
             variant="secondary"
             size="sm"
             icon={Download}
-            onClick={() => alert(`Downloading official PDF tax invoice: ${row.invoiceNumber}`)}
+            onClick={() => navigate(`/customer/invoices/${row.id}`)}
           >
             PDF
           </Button>
@@ -113,3 +128,4 @@ export function CustomerInvoices() {
 }
 
 export default CustomerInvoices;
+

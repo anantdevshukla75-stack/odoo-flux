@@ -207,6 +207,33 @@ export const DEMO_PLANS = [
   }
 ];
 
+export const DEMO_QUOTATION_TEMPLATES = [
+  {
+    id: 'tmpl-001',
+    name: 'Enterprise Cloud Suite Template',
+    description: 'Standard proposal for mid-to-large enterprise migrations with dedicated support SLA',
+    defaultPlanId: 'plan-001',
+    defaultPlanName: 'Scale Enterprise Monthly',
+    validityDays: 30,
+    productLines: [
+      { productId: 'prod-001', productName: 'Brightloop Platform Core', quantity: 1, unitPrice: 499.00 },
+      { productId: 'prod-003', productName: 'Dedicated Enterprise SLA & Support', quantity: 1, unitPrice: 350.00 }
+    ]
+  },
+  {
+    id: 'tmpl-002',
+    name: 'Growth SaaS Onboarding Package',
+    description: 'Fast-track proposal for early stage ventures with 1M event meter',
+    defaultPlanId: 'plan-003',
+    defaultPlanName: 'Starter Growth Plan',
+    validityDays: 14,
+    productLines: [
+      { productId: 'prod-001', productName: 'Brightloop Platform Core', quantity: 1, unitPrice: 249.00 },
+      { productId: 'prod-004', productName: 'High-Volume API Event Metering', quantity: 1, unitPrice: 99.00 }
+    ]
+  }
+];
+
 export const DEMO_TAXES = [
   {
     id: 'tax-001',
@@ -502,3 +529,4 @@ export const DEMO_METRICS = {
     { name: 'Starter Growth Plan', value: 4, fill: '#10B981' }
   ]
 };
+

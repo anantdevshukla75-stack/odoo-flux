@@ -56,3 +56,4 @@ export function getStatusBadgeClass(status) {
       return 'badge-neutral';
   }
 }
+
