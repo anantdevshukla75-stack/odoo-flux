@@ -40,3 +40,28 @@ class User(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+class Customer(SQLModel, table=True):
+    __tablename__ = "customers"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    user_id: int = Field(
+        foreign_key="users.id",
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+    company_name: str | None = Field(default=None, nullable=True)
+
+    phone: str | None = Field(default=None, nullable=True)
+
+    billing_address: str | None = Field(default=None, nullable=True)
+
+    tax_number: str | None = Field(default=None, nullable=True)
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
